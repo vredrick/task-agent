@@ -1,83 +1,102 @@
-# Package Information for Multi-Tool Fork
+# Package Information
 
 ## PyPI Package Details
 
-### Original Package
-- **Name**: task-agents-mcp
-- **Version**: 1.0.11
-- **PyPI**: https://pypi.org/project/task-agents-mcp/
+### Package Name
+- **Name**: task-agent-mcp
+- **Version**: 1.0.0
+- **Command**: `task-agent`
 
-### This Fork (If Published)
-- **Name**: task-agents-multi-tool
-- **Version**: 0.1.0
-- **Status**: Not published yet (exploration phase)
+## Installation
 
-## Key Changes Made
-
-1. **Package Name**: `task-agents-mcp` → `task-agents-multi-tool`
-2. **Version**: Reset to `0.1.0` for new architecture
-3. **Script Entry**: `task-agents-multi-tool` command
-4. **Description**: Updated to indicate multi-tool architecture
-
-## Publishing Instructions (If Needed)
-
-If you decide to publish this as a separate package:
-
-1. **PyPI API Token**
-   - Token saved in `.pypirc_token`
-   - Load with: `export PYPI_API_TOKEN=$(grep PYPI_API_TOKEN .pypirc_token | cut -d= -f2)`
-
-2. **Build Package**
-   ```bash
-   ./scripts/build_pypi.sh
-   ```
-
-3. **Test Locally First**
-   ```bash
-   pip install -e .
-   task-agents-multi-tool
-   ```
-
-4. **Publish to PyPI**
-   ```bash
-   python scripts/publish_pypi.py --bump patch
-   ```
-
-## Installation Commands (After Publishing)
-
+### From PyPI (when published)
 ```bash
-# Install from PyPI (when published)
-pip install task-agents-multi-tool
+# Install with pip
+pip install task-agent-mcp
 
-# Install with uvx (when published)
-uvx task-agents-multi-tool
+# Install with uvx
+uvx task-agent-mcp
+```
 
-# Install from source (current)
+### From Source (current)
+```bash
+# Clone the repository
+git clone https://github.com/vredrick/task-agent.git
+cd task-agent
+
+# Install in development mode
 pip install -e .
+
+# Or build and install
+python -m build
+pip install dist/task_agent_mcp-1.0.0-py3-none-any.whl
 ```
 
-## Claude Desktop Configuration
+## Usage
 
+### With Claude Desktop
+```json
+{
+  "mcpServers": {
+    "task-agent": {
+      "command": "task-agent"
+    }
+  }
+}
+```
+
+### With Claude Code CLI
 ```bash
-# Add to Claude Desktop (when ready)
-claude mcp add task-agents-multi -s project -- uvx task-agents-multi-tool
+claude mcp add task-agent -s project -- task-agent
 ```
 
-## Important Notes
+## Built Packages
 
-1. **Don't publish yet** - This is still exploration phase
-2. **Keep version low** (0.x.x) until architecture is finalized
-3. **Different package name** prevents conflicts with original
-4. **Same module name** (`task_agents_mcp`) for now - may need to change
+The following packages are available in the `dist/` directory:
+- `task_agent_mcp-1.0.0-py3-none-any.whl` - Wheel distribution
+- `task_agent_mcp-1.0.0.tar.gz` - Source distribution
 
-## Next Steps for Package
+## Publishing to PyPI
 
-1. Implement multi-tool server first
-2. Test thoroughly with Claude Desktop
-3. If approach is successful:
-   - Update module name to `task_agents_multi_tool`
-   - Update all imports
-   - Prepare for PyPI publication
-4. If approach is not chosen:
-   - Archive this fork
-   - Document learnings in main project
+### Prerequisites
+1. PyPI account with API token
+2. Token saved in `.pypirc_token` or environment variable
+
+### Publish Command
+```bash
+python -m twine upload dist/*
+```
+
+### Automated Publishing
+```bash
+python scripts/publish_pypi.py --bump patch
+```
+
+## Package Contents
+
+- **Entry Point**: `task-agent` command
+- **Main Module**: `task_agents_mcp`
+- **Server**: Multi-tool MCP server
+- **Agents**: 6 pre-configured agents
+- **Tools**: Each agent exposed as individual tool
+
+## Dependencies
+
+- `fastmcp>=2.0.0`
+- `pyyaml>=6.0.0`
+- Python 3.9+
+
+## Architecture
+
+This package implements the multi-tool architecture where each AI agent is exposed as its own MCP tool:
+- `code_reviewer`
+- `debugger`
+- `default_assistant`
+- `documentation_writer`
+- `performance_optimizer`
+- `test_runner`
+
+## Repository
+
+- **GitHub**: https://github.com/vredrick/task-agent (Private)
+- **Issues**: https://github.com/vredrick/task-agent/issues
