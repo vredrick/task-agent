@@ -3,19 +3,20 @@
 ## PyPI Package Details
 
 ### Package Name
-- **Name**: task-agent-mcp
-- **Version**: 1.0.0
+- **Name**: task-agents-mcp
+- **Version**: 2.0.0
 - **Command**: `task-agent`
+- **PyPI**: https://pypi.org/project/task-agents-mcp/
 
 ## Installation
 
-### From PyPI (when published)
+### From PyPI
 ```bash
 # Install with pip
-pip install task-agent-mcp
+pip install task-agents-mcp
 
 # Install with uvx
-uvx task-agent-mcp
+uvx task-agents-mcp
 ```
 
 ### From Source (current)
@@ -29,7 +30,7 @@ pip install -e .
 
 # Or build and install
 python -m build
-pip install dist/task_agent_mcp-1.0.0-py3-none-any.whl
+pip install dist/task_agents_mcp-2.0.0-py3-none-any.whl
 ```
 
 ## Usage
@@ -53,8 +54,8 @@ claude mcp add task-agent -s project -- task-agent
 ## Built Packages
 
 The following packages are available in the `dist/` directory:
-- `task_agent_mcp-1.0.0-py3-none-any.whl` - Wheel distribution
-- `task_agent_mcp-1.0.0.tar.gz` - Source distribution
+- `task_agents_mcp-2.0.0-py3-none-any.whl` - Wheel distribution
+- `task_agents_mcp-2.0.0.tar.gz` - Source distribution
 
 ## Publishing to PyPI
 

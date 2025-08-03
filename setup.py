@@ -8,8 +8,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="task-agent-mcp",
-    version="1.0.0",
+    name="task-agents-mcp",
+    version="2.0.0",
     author="vredrick",
     description="Multi-tool MCP server for specialized AI agents - each agent as its own tool",
     long_description=long_description,
