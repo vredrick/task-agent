@@ -1,5 +1,3 @@
 include README.md
-include README.pypi.md
 include LICENSE
-include requirements.txt
 recursive-include src/task_agents_mcp/agents *.md
