@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "task-agents": {
+      "type": "stdio",
+      "command": "python3.11",
+      "args": ["./server.py"],
+      "env": {
+        "CLAUDE_EXECUTABLE_PATH": "/Users/vredrick/.claude/local/claude"
+      }
+    }
+  }
+}

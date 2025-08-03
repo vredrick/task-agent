@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "task-agents": {
+      "command": "/Volumes/vredrick2/Claude Code Projects/task-agents/run_server.sh",
+      "args": [],
+      "env": {
+        "TASK_AGENTS_CONFIG_DIR": "/Volumes/vredrick2/Claude Code Projects/task-agents/configs"
+      }
+    }
+  }
+}
