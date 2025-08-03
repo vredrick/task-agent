@@ -8,13 +8,13 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="task-agents",
-    version="0.1.0",
-    author="Task-Agents Contributors",
-    description="MCP server that delegates tasks to specialized AI agents via Claude Code CLI",
+    name="task-agent-mcp",
+    version="1.0.0",
+    author="vredrick",
+    description="Multi-tool MCP server for specialized AI agents - each agent as its own tool",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/task-agents",
+    url="https://github.com/vredrick/task-agent",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",

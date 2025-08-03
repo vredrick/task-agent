@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Task-Agents MCP Server
+Task-Agents MCP Server - Multi-Tool Architecture
 
-A Model Context Protocol server that enables specialized AI agents by delegating 
-tasks to Claude Code CLI with custom configurations.
+A Model Context Protocol server that exposes each specialized AI agent as its own tool,
+providing direct access to Claude Code CLI with custom configurations.
+
+This is the multi-tool version where each agent is a separate MCP tool.
 """
 import os
 import logging
@@ -11,9 +13,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from fastmcp import FastMCP
 
-from .agent_manager import AgentManager
-from .enhanced_dynamic_helpers import create_enhanced_agents_list_resource
-from .enhanced_prompt_helpers import register_enhanced_prompts
+from agent_manager import AgentManager
+from enhanced_dynamic_helpers import create_enhanced_agents_list_resource
+from enhanced_prompt_helpers import register_enhanced_prompts
 
 # Configure logging
 logging.basicConfig(
@@ -33,7 +35,7 @@ logger.info(f"TASK_AGENTS_PATH env: {os.environ.get('TASK_AGENTS_PATH', 'NOT SET
 logger.info(f"CLAUDE_EXECUTABLE_PATH env: {os.environ.get('CLAUDE_EXECUTABLE_PATH', 'NOT SET')}")
 
 # Initialize FastMCP server
-mcp = FastMCP("task-agents")
+mcp = FastMCP("task-agent")
 
 # Look for task-agents directory
 # 1. First check environment variable (for Claude Desktop and other MCP clients)
@@ -75,135 +77,95 @@ prompt_count = register_enhanced_prompts(mcp, agent_manager)
 logger.info(f"Registered {prompt_count} dynamic prompts")
 
 
-def get_dynamic_tool_description():
-    """Generate tool description with available agents."""
-    agents_info = agent_manager.get_agents_info()
+# ============= HELPER FUNCTIONS =============
+def sanitize_tool_name(agent_name: str) -> str:
+    """Convert agent display name to valid tool name.
     
-    if not agents_info:
-        return "No agents are currently configured."
+    Examples:
+        'Code Reviewer' -> 'code_reviewer'
+        'Default Assistant' -> 'default_assistant'
+    """
+    return agent_name.lower().replace(' ', '_').replace('-', '_')
+
+
+def create_agent_tool_function(agent_name: str, agent_config):
+    """Create a tool function for a specific agent."""
+    async def agent_tool_impl(prompt: str) -> str:
+        """Execute agent task."""
+        try:
+            logger.info(f"=== {agent_name} Tool Called ===")
+            logger.info(f"Current process working directory: {os.getcwd()}")
+            logger.info(f"Task: {prompt[:100]}...")
+            
+            # Create the selected agent dict format expected by execute_task
+            selected_agent = {
+                'name': agent_config.name,  # Internal name for logging
+                'config': agent_config
+            }
+            
+            # Execute the task using the selected agent
+            result = await agent_manager.execute_task(selected_agent, prompt)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in {agent_name}: {str(e)}")
+            return f"Error executing task: {str(e)}"
     
-    description = """Delegate specialized tasks to expert AI agents, each optimized for specific software engineering domains.
+    # Set function metadata
+    agent_tool_impl.__name__ = sanitize_tool_name(agent_name)
+    agent_tool_impl.__doc__ = f"""{agent_config.description}
 
-## How to Select an Agent:
-Choose the agent whose expertise best matches your task. Each agent is specialized for particular types of work.
+Available tools: {', '.join(agent_config.tools)}
+Model: {agent_config.model}
+Working directory: {agent_config.cwd}
 
-## Available Agents:
-"""
-    
-    # Add each agent with enhanced description
-    for agent_name, info in agents_info.items():
-        description += f"\n**{agent_name}**\n"
-        description += f"{info['description']}\n"
-    
-    description += "\n## Selection Tips:\n"
-    description += "- Match your task to the agent's specialty described above\n"
-    description += "- For general tasks, use the Default Assistant\n"
-    description += "- Be specific in your prompt to get the best results\n"
-    description += "\n## Enhanced Features:\n"
-    description += f"- Query 'agents://list' resource for detailed agent information\n"
-    description += f"- Use agent-specific prompts (e.g., 'code_reviewer_task') for guided task creation"
-    
-    return description.strip()
-
-
-def generate_dynamic_examples():
-    """Generate example usage based on available agents."""
-    agents_info = agent_manager.get_agents_info()
-    if not agents_info:
-        return ""
-    
-    examples = []
-    
-    # Generate examples based on agent types
-    for agent_name, info in list(agents_info.items())[:3]:  # Limit to 3 examples
-        desc_lower = info['description'].lower()
-        
-        # Generate contextual examples based on description keywords
-        if 'review' in desc_lower or 'quality' in desc_lower:
-            example_prompt = "Review the payment processing module for security vulnerabilities and code quality"
-        elif 'debug' in desc_lower or 'fix' in desc_lower or 'error' in desc_lower:
-            example_prompt = "Fix the TypeError occurring in the user authentication flow"
-        elif 'test' in desc_lower:
-            example_prompt = "Run the test suite and fix any failing tests"
-        elif 'document' in desc_lower:
-            example_prompt = "Create API documentation for the new endpoints"
-        elif 'performance' in desc_lower or 'optim' in desc_lower:
-            example_prompt = "Analyze and optimize the database query performance"
-        else:
-            # Default example for general agents
-            example_prompt = "Help me implement a new feature for user notifications"
-        
-        examples.append(f'    agent: "{agent_name}"\n    prompt: "{example_prompt}"')
-    
-    return "\n\n".join(examples)
-
-
-# Define the tool function first
-async def delegate_impl(agent: str, prompt: str) -> str:
-    """Implementation of delegate tool."""
-    try:
-        logger.info(f"=== Delegate Tool Called ===")
-        logger.info(f"Current process working directory: {os.getcwd()}")
-        logger.info(f"Agent requested: {agent}")
-        logger.info(f"Task: {prompt[:100]}...")
-        
-        # Find the agent by display name
-        agent_config = agent_manager.get_agent_by_display_name(agent)
-        
-        if not agent_config:
-            available_agents = list(agent_manager.get_agents_info().keys())
-            return f"Error: Agent '{agent}' not found. Available agents: {', '.join(available_agents)}"
-        
-        logger.info(f"Found agent config: {agent_config.agent_name}")
-        logger.info(f"Agent cwd setting: {agent_config.cwd}")
-        
-        # Create the selected agent dict format expected by execute_task
-        selected_agent = {
-            'name': agent_config.name,  # Internal name for logging
-            'config': agent_config
-        }
-        
-        # Execute the task using the selected agent
-        result = await agent_manager.execute_task(selected_agent, prompt)
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error in delegate: {str(e)}")
-        return f"Error executing task: {str(e)}"
-
-
-# Generate dynamic description and examples
-dynamic_description = get_dynamic_tool_description()
-dynamic_examples = generate_dynamic_examples()
-
-# Create docstring with dynamic content
-delegate_impl.__doc__ = f"""{dynamic_description}
-
-## Parameters:
-    agent: Name of the agent to use (must match exactly as listed above)
+Parameters:
     prompt: The specific task, question, or request for the agent to perform
 
-## Returns:
-    Text response from the selected agent after task completion
-
-## Usage Examples:
-{dynamic_examples if dynamic_examples else '    agent: "Default Assistant"' + chr(10) + '    prompt: "Help me understand this codebase"'}
+Returns:
+    Text response from the {agent_name} agent after task completion
 """
+    
+    return agent_tool_impl
 
-# Register the tool with the dynamic description and proper name
-delegate = mcp.tool(name="delegate")(delegate_impl)
+
+# ============= DYNAMIC TOOL REGISTRATION =============
+# Register each agent as its own tool
+logger.info("\n=== Registering Individual Agent Tools ===")
+registered_tools = []
+
+for agent_name, agent_config in agent_manager.agents.items():
+    try:
+        # Create the tool function for this agent
+        tool_func = create_agent_tool_function(agent_config.agent_name, agent_config)
+        
+        # Register it as an MCP tool
+        tool_name = sanitize_tool_name(agent_config.agent_name)
+        mcp.tool(name=tool_name)(tool_func)
+        
+        registered_tools.append(tool_name)
+        logger.info(f"Registered tool: {tool_name} for agent: {agent_config.agent_name}")
+        
+    except Exception as e:
+        logger.error(f"Failed to register tool for {agent_name}: {str(e)}")
 
 # Log summary of what's available
 logger.info("\n=== MCP Server Configuration ===")
 logger.info(f"Resources: agents://list (dynamic agent information)")
 logger.info(f"Prompts: {prompt_count} agent-specific prompts")
-logger.info(f"Tools: delegate (run specialized agents)")
+logger.info(f"Tools: {len(registered_tools)} individual agent tools")
+
+# List the registered tools
+logger.info("\nRegistered tools:")
+for tool_name in registered_tools:
+    logger.info(f"  - {tool_name}")
 
 # List the registered prompts
 try:
-    from .enhanced_prompt_helpers import sanitize_function_name
+    from enhanced_prompt_helpers import sanitize_function_name
     logger.info("\nRegistered prompts:")
+    agents_info = agent_manager.get_agents_info()
     for agent_name in agents_info.keys():
         prompt_name = f"{sanitize_function_name(agent_name)}_task"
         logger.info(f"  - {prompt_name}")
@@ -212,10 +174,6 @@ except Exception as e:
 
 logger.info("\nServer ready to handle requests")
 
-def main():
-    """Entry point for the task-agents-mcp command."""
-    mcp.run()
-
 if __name__ == "__main__":
     # Run the server
-    main()
+    mcp.run()

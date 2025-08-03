@@ -3,9 +3,9 @@ requires = ["setuptools>=45", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "task-agents-multi-tool"
-version = "0.1.0"
-description = "MCP server exposing specialized AI agents as individual tools (multi-tool architecture exploration)"
+name = "task-agent-mcp"
+version = "1.0.0"
+description = "Multi-tool MCP server for specialized AI agents - each agent as its own tool"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
@@ -33,10 +33,9 @@ dependencies = [
 Homepage = "https://github.com/vredrick/task-agent"
 Repository = "https://github.com/vredrick/task-agent.git"
 Issues = "https://github.com/vredrick/task-agent/issues"
-Original = "https://github.com/vredrick/task-agents"
 
 [project.scripts]
-task-agents-multi-tool = "task_agents_mcp.server:main"
+task-agent = "task_agents_mcp.server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
