@@ -21,17 +21,48 @@ Task Agent gives you a team of specialized AI agents, each accessible as its own
 | `performance_optimizer` | Performance analysis | Optimization, efficiency |
 | `test_runner` | Test automation | Test creation, coverage |
 
+## Installation
+
+### From PyPI
+
+```bash
+# Requires Python 3.10 or higher
+python3.11 -m pip install task-agents-mcp
+
+# Or if you have Python 3.10+ as your default python3:
+pip install task-agents-mcp
+```
+
+### From Source
+
+```bash
+git clone https://github.com/vredrick/task-agent.git
+cd task-agent
+python3.11 -m pip install -e .
+```
+
 ## Quick Start
 
 ### For Claude Desktop
 
-1. Clone this repository:
+1. If installed from PyPI:
+   ```json
+   {
+     "mcpServers": {
+       "task-agent": {
+         "command": "task-agent"
+       }
+     }
+   }
+   ```
+
+2. If running from source:
    ```bash
    git clone https://github.com/vredrick/task-agent.git
    cd task-agent
    ```
 
-2. Add to Claude Desktop config:
+   Add to Claude Desktop config:
    ```json
    {
      "mcpServers": {
@@ -47,21 +78,49 @@ Task Agent gives you a team of specialized AI agents, each accessible as its own
    }
    ```
 
-3. Restart Claude Desktop and use the tools:
+Restart Claude Desktop and use the tools:
    - "Use code_reviewer to analyze my authentication module"
    - "Run debugger on this error message"
    - "Have test_runner create unit tests"
 
 ### For Claude Code CLI
 
+#### Option 1: Using PyPI Package (Recommended)
+
+```bash
+# Add to project scope
+claude mcp add task-agent -s project -- task-agent
+
+# Or add globally
+claude mcp add task-agent -- task-agent
+```
+
+#### Option 2: From Source
+
 ```bash
 # Clone and navigate to project
 git clone https://github.com/vredrick/task-agent.git
 cd task-agent
 
-# Add to project
-claude mcp add task-agent -s project python3.11 server.py
+# Add to project scope
+claude mcp add task-agent -s project -- python3.11 server.py
 ```
+
+This creates a `.mcp.json` file in your project root:
+
+```json
+{
+  "mcpServers": {
+    "task-agent": {
+      "command": "python3.11",
+      "args": ["server.py"],
+      "env": {}
+    }
+  }
+}
+```
+
+**Note**: Claude Code will prompt for approval when using project-scoped servers for security.
 
 ## How It Works
 

@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from fastmcp import FastMCP
 
-from agent_manager import AgentManager
-from enhanced_dynamic_helpers import create_enhanced_agents_list_resource
-from enhanced_prompt_helpers import register_enhanced_prompts
+from .agent_manager import AgentManager
+from .enhanced_dynamic_helpers import create_enhanced_agents_list_resource
+from .enhanced_prompt_helpers import register_enhanced_prompts
 
 # Configure logging
 logging.basicConfig(
