@@ -1,191 +1,112 @@
 # Task Agent MCP Server
 
-A Model Context Protocol (MCP) server that exposes specialized AI agents as individual tools. Each agent (code reviewer, debugger, test runner, etc.) appears as a separate tool in MCP clients, providing direct access to specialized capabilities.
+Get a team of specialized AI agents in Claude Code with just 2 commands! Each agent (code reviewer, debugger, test runner, etc.) appears as a separate tool, giving you instant access to focused expertise.
 
-## Overview
+## 🎯 What You Get
 
-Task Agent gives you a team of specialized AI agents, each accessible as its own tool:
-- **Direct Access**: Each agent is a separate tool (`code_reviewer`, `debugger`, etc.)
-- **Better Discovery**: All agents immediately visible in tool lists
-- **Specialized Capabilities**: Each agent has focused tools and instructions
-- **No Routing**: Direct invocation without intermediate delegate function
+| Agent Tool | What it does | Perfect for |
+|------------|--------------|-------------|
+| `code_reviewer` | Reviews code quality & security | PRs, security checks |
+| `debugger` | Finds and fixes bugs | Error messages, crashes |
+| `test_runner` | Creates and runs tests | Unit tests, coverage |
+| `documentation_writer` | Writes technical docs | READMEs, API docs |
+| `performance_optimizer` | Makes code faster | Bottlenecks, optimization |
+| `default_assistant` | General coding help | Everything else |
 
-### Available Agent Tools
+## 🚀 Quick Install (2 Steps)
 
-| Tool Name | Purpose | Specialized For |
-|-----------|---------|-----------------|
-| `code_reviewer` | Code quality & security analysis | Pull requests, security audits |
-| `debugger` | Bug identification & fixing | Error diagnosis, debugging |
-| `default_assistant` | General development tasks | Versatile coding help |
-| `documentation_writer` | Technical documentation | API docs, guides, READMEs |
-| `performance_optimizer` | Performance analysis | Optimization, efficiency |
-| `test_runner` | Test automation | Test creation, coverage |
-
-## Installation
-
-### From PyPI
-
+### Step 1: Install the package
 ```bash
-# Requires Python 3.10 or higher
-python3.11 -m pip install task-agents-mcp
-
-# Or if you have Python 3.10+ as your default python3:
-pip install task-agents-mcp
+python3 -m pip install task-agents-mcp
 ```
 
-### From Source
-
+### Step 2: Add to Claude Code
 ```bash
-git clone https://github.com/vredrick/task-agent.git
-cd task-agent
-python3.11 -m pip install -e .
+claude mcp add task-agent task-agent -s project
 ```
 
-## Quick Start
+That's it! ✅ Claude Code will ask for approval, then you're ready to use your agents.
 
-### For Claude Desktop
+## 💬 How to Use
 
-1. If installed from PyPI:
-   ```json
-   {
-     "mcpServers": {
-       "task-agent": {
-         "command": "task-agent"
-       }
-     }
-   }
-   ```
+Just ask Claude to use any agent:
 
-2. If running from source:
-   ```bash
-   git clone https://github.com/vredrick/task-agent.git
-   cd task-agent
-   ```
-
-   Add to Claude Desktop config:
-   ```json
-   {
-     "mcpServers": {
-       "task-agent": {
-         "command": "python3.11",
-         "args": ["/path/to/task-agent/server.py"],
-         "env": {
-           "TASK_AGENTS_PATH": "/path/to/task-agent/task-agents",
-           "CLAUDE_EXECUTABLE_PATH": "/path/to/claude"
-         }
-       }
-     }
-   }
-   ```
-
-Restart Claude Desktop and use the tools:
-   - "Use code_reviewer to analyze my authentication module"
-   - "Run debugger on this error message"
-   - "Have test_runner create unit tests"
-
-### For Claude Code CLI
-
-#### Option 1: Using PyPI Package (Recommended)
-
-```bash
-# Add to project scope
-claude mcp add task-agent -s project -- task-agent
-
-# Or add globally
-claude mcp add task-agent -- task-agent
+```
+"Use code_reviewer to check my authentication code"
+"Have debugger help with this error message"
+"Get test_runner to create unit tests for user.py"
 ```
 
-#### Option 2: From Source
+## 📦 Requirements
 
-```bash
-# Clone and navigate to project
-git clone https://github.com/vredrick/task-agent.git
-cd task-agent
+- Python 3.10 or higher
+- Claude Code CLI ([Download here](https://claude.ai/download))
 
-# Add to project scope
-claude mcp add task-agent -s project -- python3.11 server.py
-```
+## 🛠️ Custom Agents
 
-This creates a `.mcp.json` file in your project root:
+Want to create your own specialized agents? Just:
+
+1. Create a `task-agents` folder in your project
+2. Add agent config files (`.md` with YAML frontmatter)
+3. Restart - your custom agents appear automatically!
+
+[See examples below](#creating-custom-agents)
+
+## 🖥️ Also Works with Claude Desktop
+
+Add this to your Claude Desktop config:
 
 ```json
 {
   "mcpServers": {
     "task-agent": {
-      "command": "python3.11",
-      "args": ["server.py"],
-      "env": {}
+      "command": "task-agent"
     }
   }
 }
 ```
 
-**Note**: Claude Code will prompt for approval when using project-scoped servers for security.
-
-## How It Works
-
-### Architecture
-
-```
-┌─────────────────┐     ┌──────────────────┐
-│  Claude Desktop │     │  Claude Code CLI  │
-└────────┬────────┘     └────────┬─────────┘
-         │                       │
-         └───────────┬───────────┘
-                     │
-            ┌────────▼────────┐
-            │  MCP Server     │
-            │ (Multi-Tool)    │
-            └────────┬────────┘
-                     │
-       ┌─────────────┴─────────────┐
-       │                           │
-┌──────▼──────┐           ┌────────▼────────┐
-│code_reviewer│           │    debugger     │
-└──────┬──────┘           └────────┬────────┘
-       │                           │
-       └─────────┬─────────────────┘
-                 │
-         ┌───────▼────────┐
-         │ Agent Manager  │
-         │ (Unchanged)    │
-         └───────┬────────┘
-                 │
-         ┌───────▼────────┐
-         │ Claude CLI     │
-         │ Execution      │
-         └────────────────┘
+For custom agents in Claude Desktop, add the path:
+```json
+{
+  "mcpServers": {
+    "task-agent": {
+      "command": "task-agent",
+      "env": {
+        "TASK_AGENTS_PATH": "/path/to/your/task-agents"
+      }
+    }
+  }
+}
 ```
 
-### Key Components
+Restart Claude Desktop and use the same commands!
 
-1. **Multi-Tool Server** (`server.py`)
-   - Registers each agent as a separate MCP tool
-   - Maintains tool name mapping (spaces to underscores)
-   - Preserves all resources and prompts
+## 💡 Examples
 
-2. **Agent Manager** (`agent_manager.py`)
-   - Loads agent configurations
-   - Executes via Claude Code CLI
-   - Unchanged from single-tool version
+### Code Review
+```
+"Use code_reviewer to check the security of my login.py file"
+```
 
-3. **Agent Configurations** (`task-agents/*.md`)
-   - Markdown files with YAML frontmatter
-   - Define agent behavior and capabilities
-   - No changes needed for multi-tool
+### Debugging
+```
+"I'm getting a TypeError in line 42. Use debugger to help fix it"
+```
 
-### Tool Registration
+### Writing Tests
+```
+"Have test_runner create comprehensive tests for the User class"
+```
 
-```python
-# Simplified registration logic
-for agent_name, agent_config in agent_manager.agents.items():
-    tool_name = agent_name.lower().replace(' ', '_')
-    mcp.tool(name=tool_name)(create_agent_function(agent_config))
+### Documentation
+```
+"Use documentation_writer to create API docs for the payment module"
 ```
 
 ## Creating Custom Agents
 
-1. Create a new file in `task-agents/`:
+1. Create `task-agents/my-agent.md`:
    ```markdown
    ---
    agent-name: Security Auditor
@@ -199,99 +120,52 @@ for agent_name, agent_config in agent_manager.agents.items():
    You are a security specialist focused on finding vulnerabilities...
    ```
 
-2. Restart the server
-3. New tool `security_auditor` is automatically available
+2. That's it! Use with: `"Have security_auditor check for SQL injection"`
 
-## Features
-
-### 🎯 Individual Tools
-Each agent appears as its own tool with:
-- Specific documentation
-- Direct invocation
-- No agent parameter needed
-
-### 📚 Rich Resources
-Query `agents://list` to see:
-- All available agents
-- Their capabilities
-- Usage examples
-- Tool metadata
-
-### 📝 Agent-Specific Prompts
-Pre-configured prompts for each agent:
-- `code_reviewer_task`
-- `debugger_task`
-- `documentation_writer_task`
-- etc.
-
-### 🔧 Flexible Configuration
-- Custom system prompts
-- Tool restrictions per agent
-- Model selection (Opus/Sonnet/Haiku)
-- Working directory control
-
-## Comparison with Single-Tool Version
-
-| Feature | Multi-Tool | Single-Tool |
-|---------|------------|-------------|
-| Tool Count | One per agent | One total |
-| Discovery | Immediate | Via description |
-| Usage | Direct tool | delegate + agent param |
-| Best For | <10 agents | Many agents |
-
-## Advanced Usage
-
-### Environment Variables
-
-- `TASK_AGENTS_PATH`: Path to task-agents directory
-- `CLAUDE_EXECUTABLE_PATH`: Path to Claude executable (required for Claude Desktop)
-
-### Working Directory Resolution
-
-- `cwd: .` - Parent of task-agents folder
-- `cwd: /absolute/path` - Specific directory
-- `cwd: ${HOME}/projects` - With env variables
-
-### Adding to Existing Projects
+## 🧪 Test It Out
 
 ```bash
-# Copy task-agents folder to your project
-cp -r task-agents /your/project/
+# Quick test
+claude "Use code_reviewer to analyze this: def add(a, b): return a + b"
 
-# Agents will work in your project directory
+# See all agents
+claude "Show available agents using agents://list"
 ```
 
-## Troubleshooting
+## ❓ Troubleshooting
 
-### Server won't start
-- Check Python version (3.9+ required)
-- Verify task-agents directory exists
-- Check file permissions
+### "command not found: task-agent"
+```bash
+# Make sure you installed it:
+python3 -m pip install task-agents-mcp
+```
 
-### Tools not appearing
-- Restart Claude Desktop
-- Check server logs: `/tmp/task_agents_server.log`
-- Verify agent files have correct YAML frontmatter
+### "spawn task-agent ENOENT"
+```bash
+# Reinstall the package:
+python3 -m pip install --upgrade task-agents-mcp
+```
 
-### Agent execution fails
-- Ensure Claude Code CLI is installed
-- Check CLAUDE_EXECUTABLE_PATH for Claude Desktop
-- Verify agent has required tools in config
+### Agents not showing up?
+- Restart Claude Code/Desktop
+- Check Python version: `python3 --version` (need 3.10+)
 
-## Contributing
+## 📚 Advanced Usage
 
-1. Fork the repository
-2. Create new agent configurations
-3. Test with both Claude Desktop and CLI
-4. Submit pull request
+For more details on:
+- Creating complex custom agents
+- Environment variables
+- Claude Desktop configuration
+- Working with multiple projects
 
-## License
+[See the full documentation](https://github.com/vredrick/task-agent)
 
-MIT License - see LICENSE file
+## 📄 License
 
-## Acknowledgments
+MIT License
 
-Built on:
-- [FastMCP](https://github.com/jlowin/fastmcp) - MCP server framework
-- [Model Context Protocol](https://github.com/anthropics/mcp) - Anthropic's MCP
-- Claude Code CLI - Agent execution engine
+## 🙏 Built With
+
+- [FastMCP](https://github.com/jlowin/fastmcp)
+- [Model Context Protocol](https://github.com/anthropics/mcp)
+- Claude Code CLI

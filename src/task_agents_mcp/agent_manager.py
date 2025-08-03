@@ -136,8 +136,28 @@ class AgentManager:
         """
         agent_config = selected_agent['config']
         
-        # Get claude executable path from environment or use default
-        claude_path = os.environ.get('CLAUDE_EXECUTABLE_PATH', '/Users/vredrick/.claude/local/claude')
+        # Get claude executable path from environment or try to find it
+        claude_path = os.environ.get('CLAUDE_EXECUTABLE_PATH')
+        
+        if not claude_path:
+            # Try to find claude in PATH
+            import shutil
+            claude_path = shutil.which('claude')
+            
+            if not claude_path:
+                # Check common installation locations
+                common_paths = [
+                    os.path.expanduser('~/.claude/local/claude'),
+                    '/usr/local/bin/claude',
+                    '/opt/homebrew/bin/claude'
+                ]
+                for path in common_paths:
+                    if os.path.exists(path) and os.access(path, os.X_OK):
+                        claude_path = path
+                        break
+                        
+            if not claude_path:
+                return "Error: Claude Code CLI not found. Please install Claude Code CLI from https://claude.ai/download or set CLAUDE_EXECUTABLE_PATH environment variable."
         
         # Start building the command
         cmd = [

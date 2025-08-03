@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 logger.info("=== Task Agents Server Starting ===")
 logger.info(f"Current working directory: {os.getcwd()}")
 logger.info(f"TASK_AGENTS_PATH env: {os.environ.get('TASK_AGENTS_PATH', 'NOT SET')}")
-logger.info(f"CLAUDE_EXECUTABLE_PATH env: {os.environ.get('CLAUDE_EXECUTABLE_PATH', 'NOT SET')}")
+logger.info(f"CLAUDE_EXECUTABLE_PATH env: {os.environ.get('CLAUDE_EXECUTABLE_PATH', 'NOT SET (will auto-detect)')}")
 
 # Initialize FastMCP server
 mcp = FastMCP("task-agent")
@@ -45,13 +45,17 @@ if not config_dir:
     # Default to task-agents subdirectory in current working directory
     config_dir = os.path.join(os.getcwd(), "task-agents")
 
-# Ensure config directory exists
+# Check if config directory exists
 if not os.path.exists(config_dir):
-    logger.error(f"Config directory not found: {config_dir}")
     if os.environ.get('TASK_AGENTS_PATH'):
+        logger.error(f"Config directory not found: {config_dir}")
         logger.error(f"Check that TASK_AGENTS_PATH points to a valid directory")
     else:
-        logger.error(f"Either set TASK_AGENTS_PATH environment variable or add 'task-agents' directory to your project")
+        logger.warning(f"No task-agents directory found at: {config_dir}")
+        logger.info("Server will start with built-in agents only")
+        logger.info("To add custom agents:")
+        logger.info("  - For Claude Code: Create a 'task-agents' directory in your project")
+        logger.info("  - For Claude Desktop: Set TASK_AGENTS_PATH environment variable")
 
 # Initialize agent manager and load agents
 agent_manager = AgentManager(config_dir)
@@ -163,7 +167,7 @@ for tool_name in registered_tools:
 
 # List the registered prompts
 try:
-    from enhanced_prompt_helpers import sanitize_function_name
+    from .enhanced_prompt_helpers import sanitize_function_name
     logger.info("\nRegistered prompts:")
     agents_info = agent_manager.get_agents_info()
     for agent_name in agents_info.keys():
@@ -174,6 +178,10 @@ except Exception as e:
 
 logger.info("\nServer ready to handle requests")
 
+def main():
+    """Main entry point for the server."""
+    mcp.run()
+
 if __name__ == "__main__":
     # Run the server
-    mcp.run()
+    main()

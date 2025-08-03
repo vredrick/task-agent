@@ -1,160 +1,216 @@
-# CLAUDE.md
+# CLAUDE.md - Task Agent Multi-Tool MCP Server
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 🎯 Quick Context
 
-## 🚀 Task Agent
+You're working with a **multi-tool MCP server** where each AI agent is exposed as its own tool. This is NOT the single-tool version (that's a separate repo).
 
-This is the multi-tool version of task-agent where each AI agent is exposed as its own MCP tool, providing direct access to specialized agents without routing through a delegate function.
+### Key Architecture Points
+- Each agent = separate MCP tool (e.g., `code_reviewer`, `debugger`)
+- No routing/delegate function - direct tool invocation
+- Tool names: lowercase with underscores (e.g., "Code Reviewer" → `code_reviewer`)
+- Built on FastMCP with dynamic tool registration
 
-## Overview
+## 📁 Project Structure
 
-Task Agent is a Model Context Protocol (MCP) server that exposes specialized AI agents as individual tools. Each agent (code reviewer, debugger, test runner, etc.) appears as a separate tool in MCP clients like Claude Desktop.
-
-### Key Differences from Single-Tool Version
-- **Direct Tool Access**: Each agent is its own tool (e.g., `code_reviewer`, `debugger`)
-- **Better Discoverability**: All agents visible in tool list
-- **No Routing Layer**: Direct invocation without delegate function
-- **Simplified Usage**: No need to specify agent parameter
-
-## Available Tools
-
-The server exposes these individual tools:
-- `code_reviewer` - Expert code review for quality and security
-- `debugger` - Bug identification and fixing specialist
-- `default_assistant` - General-purpose development tasks
-- `documentation_writer` - Technical documentation creation
-- `performance_optimizer` - Code efficiency analysis
-- `test_runner` - Test automation and coverage
-
-## Commands
-
-### Running the Server
-```bash
-# Direct execution
-python server.py
-
-# With environment setup
-export TASK_AGENTS_PATH=/path/to/task-agents
-export CLAUDE_EXECUTABLE_PATH=/path/to/claude
-python server.py
+```
+task-agent/
+├── src/task_agents_mcp/
+│   ├── __init__.py          # Version: 2.4.2
+│   ├── server.py            # Multi-tool MCP server (main entry)
+│   └── agent_manager.py     # Agent loader/executor (unchanged from single-tool)
+├── task-agents/             # Built-in agent configs
+│   ├── code-reviewer.md
+│   ├── debugger.md
+│   ├── default-assistant.md
+│   ├── documentation-writer.md
+│   ├── performance-optimizer.md
+│   └── test-runner.md
+├── pyproject.toml           # Package config (name: task-agents-mcp)
+├── README.md                # User documentation
+└── CLAUDE.md                # This file
 ```
 
-### Adding to Claude Desktop
-```json
+## 🔧 Key Technical Details
+
+### Package Info
+- **PyPI Name**: `task-agents-mcp`
+- **Command**: `task-agent` (no 's' at end!)
+- **Current Version**: 2.4.2
+- **Entry Point**: `task_agents_mcp.server:main`
+
+### Tool Registration Flow
+```python
+# server.py - Simplified logic
+for agent_name, agent_config in agent_manager.agents.items():
+    tool_func = create_agent_tool_function(agent_config.agent_name, agent_config)
+    tool_name = sanitize_tool_name(agent_config.agent_name)  # spaces→underscores, lowercase
+    mcp.tool(name=tool_name)(tool_func)
+```
+
+### Environment Variables
+- `TASK_AGENTS_PATH`: Custom agents directory
+  - Claude Code: Optional (defaults to `./task-agents`)
+  - Claude Desktop: Required for custom agents
+- `CLAUDE_EXECUTABLE_PATH`: Auto-detected from PATH
+
+### Claude CLI Detection (agent_manager.py)
+```python
+# Searches in order:
+1. Environment variable CLAUDE_EXECUTABLE_PATH
+2. System PATH (using shutil.which)
+3. Common installation paths:
+   - macOS: /usr/local/bin/claude, ~/bin/claude
+   - Linux: /usr/local/bin/claude, ~/.local/bin/claude
+   - Windows: %LOCALAPPDATA%/claude/claude.exe
+```
+
+## 📝 Common User Tasks
+
+### Installation Issues
+```bash
+# User reports "spawn task-agent ENOENT"
+python3.11 -m pip install task-agents-mcp
+
+# Or from source
+python3.11 -m pip install -e /path/to/task-agent
+```
+
+### Adding to Claude Code
+```bash
+# Correct syntax (needs both name and command)
+claude mcp add task-agent task-agent -s project
+
+# Creates .mcp.json:
 {
   "mcpServers": {
     "task-agent": {
-      "command": "python3.11",
-      "args": ["/path/to/server.py"],
-      "env": {
-        "TASK_AGENTS_PATH": "/path/to/task-agents",
-        "CLAUDE_EXECUTABLE_PATH": "/path/to/claude"
-      }
+      "command": "task-agent",
+      "args": [],
+      "env": {}
     }
   }
 }
 ```
 
-## Architecture
-
-### Core Components
-
-1. **Multi-Tool Server (`server.py`)**
-   - FastMCP server with dynamic tool registration
-   - Creates individual tool function for each agent
-   - Maintains same resources and prompts as single-tool version
-   - Tool names use snake_case (e.g., `code_reviewer`)
-
-2. **Agent Manager (`agent_manager.py`)**
-   - Unchanged from single-tool version
-   - Loads agent configurations from markdown files
-   - Executes tasks via Claude Code CLI
-   - Handles working directory resolution
-
-3. **Agent Configurations (`task-agents/*.md`)**
-   - Same format as single-tool version
-   - No changes needed to agent files
-   - Each agent automatically gets its own tool
-
-### Implementation Details
-
-```python
-# Tool Registration (simplified)
-for agent_name, agent_config in agent_manager.agents.items():
-    tool_func = create_agent_tool_function(agent_config.agent_name, agent_config)
-    tool_name = sanitize_tool_name(agent_config.agent_name)
-    mcp.tool(name=tool_name)(tool_func)
-```
-
-### Tool Name Mapping
-- Spaces replaced with underscores
-- Lowercase conversion
-- Examples: "Code Reviewer" → `code_reviewer`
-
-## Usage Examples
-
-### In Claude Desktop
-```
-"Use the code_reviewer tool to analyze my Python module"
-"Run debugger on the authentication error"
-"Have test_runner check my test coverage"
-```
-
-### Direct Tool Invocation
-Each tool accepts a single `prompt` parameter:
-```typescript
-await mcp.use_tool("code_reviewer", {
-  prompt: "Review the security of user authentication"
-})
-```
-
-## Environment Variables
-
-- `TASK_AGENTS_PATH`: Path to task-agents directory (optional)
-- `CLAUDE_EXECUTABLE_PATH`: Path to Claude CLI (required for Claude Desktop)
-
-## Development Notes
-
-### Adding New Agents
-1. Create `.md` file in task-agents directory
-2. Restart server - new tool automatically registered
-3. Tool name derived from `agent-name` field
-
 ### Testing
 ```bash
-# Test server startup
-python server.py
+# Quick test
+claude "Use code_reviewer to analyze this: def add(a, b): return a + b"
 
-# Should show all registered tools:
-# - code_reviewer
-# - debugger
-# - default_assistant
-# etc.
+# List all agents
+claude "Show available agents using agents://list"
 ```
 
-### Key Files
-- `server.py` - Multi-tool MCP server
-- `agent_manager.py` - Agent execution engine (unchanged)
-- `task-agents/*.md` - Agent configurations (unchanged)
+## 🐛 Known Issues & Fixes
 
-## Advantages of Multi-Tool Architecture
+### 1. "spawn task-agent ENOENT"
+- **Cause**: Package not installed or not in PATH
+- **Fix**: Install with `python3.11 -m pip install task-agents-mcp`
 
-1. **Immediate Discovery**: All agents visible in tool list
-2. **Direct Access**: No intermediate routing
-3. **Type Safety**: Each tool has specific documentation
-4. **Intuitive Usage**: Tool name indicates purpose
-5. **No Parameter Errors**: Can't misspell agent names
+### 2. "missing required argument 'commandOrUrl'"
+- **Cause**: Wrong `claude mcp add` syntax in docs
+- **Fix**: Use `claude mcp add task-agent task-agent -s project`
 
-## When to Use This Version
+### 3. Custom agents not loading
+- **Claude Code**: Check `task-agents/` exists in project root
+- **Claude Desktop**: Must set `TASK_AGENTS_PATH` env var
 
-Use the multi-tool version when:
-- You have a manageable number of agents (< 10)
-- Tool discovery is important
-- Direct access is preferred
-- Working with Claude Desktop primarily
+## 🚀 Development Workflow
 
-The single-tool version (separate repo) is better when:
-- You have many agents (10+)
-- Want a cleaner tool list
-- Need flexible agent naming
-- Prefer centralized routing
+### Making Changes
+1. Edit source files in `src/task_agents_mcp/`
+2. Update version in both:
+   - `pyproject.toml`
+   - `src/task_agents_mcp/__init__.py`
+3. Test locally: `python3.11 -m pip install -e .`
+4. Test with Claude Code: `claude "Use code_reviewer..."`
+
+### Publishing to PyPI
+```bash
+# Clean previous builds
+rm -rf dist/ build/ *.egg-info
+
+# Build
+python3.11 -m build
+
+# Upload
+python3.11 -m twine upload dist/*
+```
+
+### Version History Notes
+- 2.4.0: Removed CLAUDE_EXECUTABLE_PATH requirement
+- 2.4.2: Fixed `claude mcp add` documentation
+
+## 🎯 Key Differences from Single-Tool Version
+
+| Aspect | Multi-Tool (This) | Single-Tool |
+|--------|-------------------|-------------|
+| Tools | One per agent | One total |
+| Usage | Direct: `code_reviewer` | Via delegate |
+| Config | No agent param | Needs agent name |
+| Discovery | Immediate in tool list | Via description |
+
+## 💡 Implementation Tips
+
+### When Users Want Custom Agents
+1. Tell them to create `task-agents/` in project root
+2. Agent file format:
+   ```markdown
+   ---
+   agent-name: My Agent
+   description: What it does
+   tools: Read, Grep, Bash
+   model: opus
+   cwd: .
+   ---
+   
+   System-prompt:
+   You are...
+   ```
+3. Tool name will be `my_agent` (auto-converted)
+
+### Common Customizations Users Ask For
+- New agent types → Add .md file to task-agents/
+- Different models → Change `model:` in agent config
+- Tool restrictions → Modify `tools:` list
+- Working directory → Adjust `cwd:` setting
+
+## 🔍 Quick Debugging Commands
+
+```bash
+# Check if installed
+which task-agent
+
+# Check Python version
+python3 --version  # Need 3.10+
+
+# Test server directly
+task-agent
+
+# Check package version
+python3 -c "import task_agents_mcp; print(task_agents_mcp.__version__)"
+
+# See MCP config
+cat .mcp.json
+```
+
+## ⚠️ Important Reminders
+
+1. **Package name vs command**: 
+   - Package: `task-agents-mcp` (with 's')
+   - Command: `task-agent` (no 's')
+
+2. **Claude Code priority**: This project prioritizes Claude Code CLI over Claude Desktop
+
+3. **No CLAUDE_EXECUTABLE_PATH needed**: Auto-detects from v2.4.0+
+
+4. **Project vs global scope**: Recommend project scope for Claude Code (`-s project`)
+
+5. **Security**: Claude Code prompts for approval on project-scoped servers
+
+## 📚 Resources
+
+- **GitHub**: https://github.com/vredrick/task-agent
+- **PyPI**: https://pypi.org/project/task-agents-mcp/
+- **MCP Docs**: https://modelcontextprotocol.io/
+- **FastMCP**: https://github.com/jlowin/fastmcp
