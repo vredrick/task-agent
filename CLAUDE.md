@@ -28,15 +28,15 @@ The server exposes these individual tools:
 
 ## Commands
 
-### Running the Multi-Tool Server
+### Running the Server
 ```bash
 # Direct execution
-python server_multi_tool.py
+python server.py
 
 # With environment setup
 export TASK_AGENTS_PATH=/path/to/task-agents
 export CLAUDE_EXECUTABLE_PATH=/path/to/claude
-python server_multi_tool.py
+python server.py
 ```
 
 ### Adding to Claude Desktop
@@ -45,7 +45,7 @@ python server_multi_tool.py
   "mcpServers": {
     "task-agent": {
       "command": "python3.11",
-      "args": ["/path/to/server_multi_tool.py"],
+      "args": ["/path/to/server.py"],
       "env": {
         "TASK_AGENTS_PATH": "/path/to/task-agents",
         "CLAUDE_EXECUTABLE_PATH": "/path/to/claude"
@@ -59,7 +59,7 @@ python server_multi_tool.py
 
 ### Core Components
 
-1. **Multi-Tool Server (`server_multi_tool.py`)**
+1. **Multi-Tool Server (`server.py`)**
    - FastMCP server with dynamic tool registration
    - Creates individual tool function for each agent
    - Maintains same resources and prompts as single-tool version
@@ -123,7 +123,7 @@ await mcp.use_tool("code_reviewer", {
 ### Testing
 ```bash
 # Test server startup
-python server_multi_tool.py
+python server.py
 
 # Should show all registered tools:
 # - code_reviewer
@@ -133,7 +133,7 @@ python server_multi_tool.py
 ```
 
 ### Key Files
-- `server_multi_tool.py` - Multi-tool MCP server
+- `server.py` - Multi-tool MCP server
 - `agent_manager.py` - Agent execution engine (unchanged)
 - `task-agents/*.md` - Agent configurations (unchanged)
 

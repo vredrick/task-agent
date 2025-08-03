@@ -37,7 +37,7 @@ Task Agent gives you a team of specialized AI agents, each accessible as its own
      "mcpServers": {
        "task-agent": {
          "command": "python3.11",
-         "args": ["/path/to/task-agent/server_multi_tool.py"],
+         "args": ["/path/to/task-agent/server.py"],
          "env": {
            "TASK_AGENTS_PATH": "/path/to/task-agent/task-agents",
            "CLAUDE_EXECUTABLE_PATH": "/path/to/claude"
@@ -60,7 +60,7 @@ git clone https://github.com/vredrick/task-agent.git
 cd task-agent
 
 # Add to project
-claude mcp add task-agent -s project python3.11 server_multi_tool.py
+claude mcp add task-agent -s project python3.11 server.py
 ```
 
 ## How It Works
@@ -100,7 +100,7 @@ claude mcp add task-agent -s project python3.11 server_multi_tool.py
 
 ### Key Components
 
-1. **Multi-Tool Server** (`server_multi_tool.py`)
+1. **Multi-Tool Server** (`server.py`)
    - Registers each agent as a separate MCP tool
    - Maintains tool name mapping (spaces to underscores)
    - Preserves all resources and prompts
