@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.4] - 2025-08-04
+
+### Added
+- Claude Code slash command `/task-agents` to easily create task-agents directory with default configurations
+- Example slash command file in `examples/task-agents-command.md`
+
+### Updated
+- README documentation to mention the slash command for quick setup
+
 ## [2.4.3] - 2025-08-04
 
 ### Fixed

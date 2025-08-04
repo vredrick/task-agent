@@ -46,7 +46,9 @@ Just ask Claude to use any agent:
 
 Want to create your own specialized agents? Just:
 
-1. Create a `task-agents` folder in your project
+1. Create a `task-agents` folder in your project:
+   - **Quick way**: Run `/task-agents` in Claude Code to copy all default agents
+   - **Manual way**: Create the folder and add your own agent files
 2. Add agent config files (`.md` with YAML frontmatter)
 3. Restart - your custom agents appear automatically!
 
