@@ -253,7 +253,7 @@ class AgentManager:
             output_lines = output.split('\n')
             
             # Extract the final assistant message from the stream
-            last_assistant_message = ""
+            assistant_messages = []  # Collect all text segments
             logger.debug(f"Total output lines: {len(output_lines)}")
             
             # Track progress events and usage
@@ -261,6 +261,7 @@ class AgentManager:
             tools_used = []
             token_usage = {}
             total_cost = None
+            session_id = None
             
             for line in output.split('\n'):
                 if line.strip():
@@ -269,8 +270,13 @@ class AgentManager:
                         event_type = event.get('type')
                         logger.debug(f"Event type: {event_type}")
                         
+                        # Capture session ID from system init
+                        if event_type == 'system' and event.get('subtype') == 'init':
+                            session_id = event.get('session_id')
+                            logger.info(f"Session ID: {session_id}")
+                        
                         # Look for assistant messages
-                        if event_type == 'assistant' and 'message' in event:
+                        elif event_type == 'assistant' and 'message' in event:
                             message = event['message']
                             if message.get('content'):
                                 content_list = message['content']
@@ -279,9 +285,10 @@ class AgentManager:
                                     item_type = content_item.get('type')
                                     
                                     if item_type == 'text' and content_item.get('text'):
-                                        # Text content
-                                        last_assistant_message = content_item['text']
-                                        logger.debug(f"Found assistant text: {last_assistant_message[:100]}")
+                                        # Text content - accumulate all segments
+                                        text_content = content_item['text']
+                                        assistant_messages.append(text_content)
+                                        logger.debug(f"Found assistant text: {text_content[:100]}")
                                     
                                     elif item_type == 'tool_use':
                                         # Tool use content
@@ -297,7 +304,8 @@ class AgentManager:
                                 # The result field might contain the final output
                                 result_text = event['result']
                                 if result_text and isinstance(result_text, str):
-                                    last_assistant_message = result_text
+                                    # Override accumulated messages with final result
+                                    assistant_messages = [result_text]
                                     logger.debug(f"Found result text: {result_text[:100]}")
                             
                             # Extract token usage and cost
@@ -309,11 +317,23 @@ class AgentManager:
                             if progress_callback:
                                 await progress_callback("✅ Task completed!")
                                 
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse JSON line: {line[:100]}...")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse JSON line: {line[:100]}... Error: {e}")
+                        # Check if it's a partial line that might be concatenated
+                        if line.startswith('{') and not line.endswith('}'):
+                            logger.debug("Detected potential partial JSON line, skipping...")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Unexpected error parsing line: {e}")
                         continue
             
-            if not last_assistant_message:
+            # Log parsing summary
+            logger.info(f"Parsing complete - Messages: {len(assistant_messages)}, Tools: {len(tools_used)}, Session: {session_id}")
+            
+            # Combine all assistant messages
+            final_message = '\n'.join(assistant_messages) if assistant_messages else ""
+            
+            if not final_message:
                 logger.warning("No assistant message found in stream-json output")
                 if progress_callback:
                     await progress_callback("⚠️ Task completed but no response was generated")
@@ -322,12 +342,16 @@ class AgentManager:
             # Format the response with tool usage first
             formatted_response = ""
             
+            # Add session ID if available
+            if session_id:
+                formatted_response += f"Session: {session_id}\n"
+            
             # Add tool usage summary if any tools were used
             if tools_used:
                 formatted_response += f"Tools used: {', '.join(tools_used)}\n\n"
             
             # Add the actual message
-            formatted_response += last_assistant_message
+            formatted_response += final_message
             
             # Add token usage if available
             if token_usage:

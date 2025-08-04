@@ -14,8 +14,6 @@ from typing import Dict, List, Optional, Any
 from fastmcp import FastMCP
 
 from .agent_manager import AgentManager
-from .enhanced_dynamic_helpers import create_enhanced_agents_list_resource
-from .enhanced_prompt_helpers import register_enhanced_prompts
 
 # Configure logging
 logging.basicConfig(
@@ -69,16 +67,7 @@ agents_info = agent_manager.get_agents_info()
 for name, info in agents_info.items():
     logger.info(f"  - {name}: {info['description']}")
 
-# ============= DYNAMIC RESOURCE =============
-# Register the enhanced agents list resource
-agents_list_func = create_enhanced_agents_list_resource(agent_manager)
-agents_list_resource = mcp.resource("agents://list")(agents_list_func)
-logger.info("Registered dynamic resource: agents://list")
-
-# ============= DYNAMIC PROMPTS =============
-# Register dynamic prompts for all agents
-prompt_count = register_enhanced_prompts(mcp, agent_manager)
-logger.info(f"Registered {prompt_count} dynamic prompts")
+# Enhanced resources and prompts removed - most MCP clients don't support them yet
 
 
 # ============= HELPER FUNCTIONS =============
@@ -157,7 +146,7 @@ for agent_name, agent_config in agent_manager.agents.items():
 # Log summary of what's available
 logger.info("\n=== MCP Server Configuration ===")
 logger.info(f"Resources: agents://list (dynamic agent information)")
-logger.info(f"Prompts: {prompt_count} agent-specific prompts")
+# Prompts feature removed - most MCP clients don't support them yet
 logger.info(f"Tools: {len(registered_tools)} individual agent tools")
 
 # List the registered tools
@@ -165,16 +154,7 @@ logger.info("\nRegistered tools:")
 for tool_name in registered_tools:
     logger.info(f"  - {tool_name}")
 
-# List the registered prompts
-try:
-    from .enhanced_prompt_helpers import sanitize_function_name
-    logger.info("\nRegistered prompts:")
-    agents_info = agent_manager.get_agents_info()
-    for agent_name in agents_info.keys():
-        prompt_name = f"{sanitize_function_name(agent_name)}_task"
-        logger.info(f"  - {prompt_name}")
-except Exception as e:
-    logger.error(f"Could not list prompts: {e}")
+# Prompts feature removed - most MCP clients don't support them yet
 
 logger.info("\nServer ready to handle requests")
 
