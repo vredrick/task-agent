@@ -12,8 +12,10 @@ import subprocess
 import asyncio
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable, Awaitable
+from typing import Dict, List, Optional, Any, Callable, Awaitable, Union
 from dataclasses import dataclass
+
+from .session_store import SessionChainStore
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class AgentConfig:
     model: str
     cwd: str
     system_prompt: str
+    resume_session: Union[bool, int] = False  # False, True (5 default), or specific number
     
 
 class AgentManager:
@@ -36,6 +39,10 @@ class AgentManager:
     def __init__(self, configs_dir: str = "configs"):
         self.configs_dir = Path(configs_dir)
         self.agents: Dict[str, AgentConfig] = {}
+        
+        # Initialize session store with persistent storage
+        session_store_path = Path("/tmp/task_agents_sessions.json")
+        self.session_store = SessionChainStore(session_store_path)
         
     def load_agents(self) -> None:
         """Load all agent configurations from the configs directory."""
@@ -89,6 +96,26 @@ class AgentManager:
             # Keep cwd as-is for now - it will be resolved during execution
             # This allows for different behaviors based on the execution context
             
+            # Parse optional resume-session field
+            resume_session = False
+            if 'optional' in frontmatter and isinstance(frontmatter['optional'], dict):
+                resume_val = frontmatter['optional'].get('resume-session', False)
+                if isinstance(resume_val, bool):
+                    resume_session = resume_val
+                elif isinstance(resume_val, int) and resume_val > 0:
+                    resume_session = resume_val
+                elif isinstance(resume_val, str):
+                    # Parse string format like "true", "false", "true 5", or just "5"
+                    parts = resume_val.strip().split()
+                    if parts[0].lower() == 'true':
+                        # "true" or "true 5"
+                        resume_session = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 5
+                    elif parts[0].lower() == 'false':
+                        resume_session = False
+                    elif parts[0].isdigit():
+                        # Just a number like "5"
+                        resume_session = int(parts[0])
+            
             return AgentConfig(
                 name=config_path.stem,
                 agent_name=frontmatter['agent-name'],
@@ -96,7 +123,8 @@ class AgentManager:
                 tools=tools,
                 model=frontmatter['model'],
                 cwd=cwd,
-                system_prompt=system_prompt
+                system_prompt=system_prompt,
+                resume_session=resume_session
             )
             
         except yaml.YAMLError as e:
@@ -136,6 +164,23 @@ class AgentManager:
         """
         agent_config = selected_agent['config']
         
+        # Determine if we should resume a session
+        resume_session_id = None
+        was_resume = False
+        if agent_config.resume_session:
+            # Calculate max exchanges
+            if agent_config.resume_session is True:
+                max_exchanges = 5  # Default when just "true"
+            else:
+                max_exchanges = agent_config.resume_session
+            
+            # Get session to resume
+            resume_session_id = self.session_store.get_resume_session(
+                agent_config.agent_name,
+                max_exchanges
+            )
+            was_resume = resume_session_id is not None
+        
         # Get claude executable path from environment or try to find it
         claude_path = os.environ.get('CLAUDE_EXECUTABLE_PATH')
         
@@ -169,6 +214,11 @@ class AgentManager:
             '--allowedTools', *agent_config.tools,  # Unpack list for space-separated tools
             '--model', agent_config.model
         ]
+        
+        # Add resume flag if we have a session to resume
+        if resume_session_id:
+            cmd.extend(['-r', resume_session_id])
+            logger.info(f"Resuming session {resume_session_id} for {agent_config.agent_name}")
         
         try:
             # Resolve the working directory from agent config
@@ -339,12 +389,31 @@ class AgentManager:
                     await progress_callback("⚠️ Task completed but no response was generated")
                 return "Task completed but no response message was generated."
             
+            # Update session store with the NEW session ID
+            if session_id and agent_config.resume_session:
+                self.session_store.update_chain(
+                    agent_config.agent_name,
+                    session_id,
+                    was_resume=was_resume
+                )
+            
             # Format the response with tool usage first
             formatted_response = ""
             
-            # Add session ID if available
+            # Add session ID and chain info if available
             if session_id:
                 formatted_response += f"Session: {session_id}\n"
+                
+                # Add session chain info if resume is enabled
+                if agent_config.resume_session:
+                    chain_info = self.session_store.get_chain_info(agent_config.agent_name)
+                    if chain_info:
+                        formatted_response += f"Exchange: {chain_info['exchange_count']}"
+                        if agent_config.resume_session is True:
+                            formatted_response += "/5"
+                        else:
+                            formatted_response += f"/{agent_config.resume_session}"
+                        formatted_response += "\n"
             
             # Add tool usage summary if any tools were used
             if tools_used:

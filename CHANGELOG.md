@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.5.0] - 2025-08-04
+
+### Added
+- **Session Resumption Feature**: Agents can now maintain context across multiple exchanges
+  - Supports `resume-session` field in agent configurations
+  - Automatic session chaining with Claude CLI's `-r` flag
+  - Configurable exchange limits before starting fresh
+  - Session persistence in `/tmp/task_agents_sessions.json`
+- SessionChainStore class for managing session ID chains
+- Session info in agent responses (Session ID, Exchange count)
+- Documentation for session resumption feature
+
+### Updated
+- AgentConfig to support `resume-session` field with boolean or numeric values
+- AgentManager to integrate session chain tracking and resume functionality
+- Default agents (Debugger, Default Assistant) now include session resumption
+- README with session resumption documentation and examples
+
+### Added Agent
+- Session Tester agent for testing session functionality
+
 ## [2.4.4] - 2025-08-04
 
 ### Added

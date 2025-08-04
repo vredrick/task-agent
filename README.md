@@ -116,6 +116,8 @@ Restart Claude Desktop and use the same commands!
    tools: Read, Grep, Search, Bash
    model: opus
    cwd: .
+   optional:
+     resume-session: true 10  # Enable session resumption
    ---
    
    System-prompt:
@@ -123,6 +125,23 @@ Restart Claude Desktop and use the same commands!
    ```
 
 2. That's it! Use with: `"Have security_auditor check for SQL injection"`
+
+### Session Resumption (v2.5.0+)
+
+Agents can now maintain context across multiple exchanges! Add to any agent:
+
+```yaml
+optional:
+  resume-session: true      # 5 exchanges (default)
+  resume-session: true 10   # 10 exchanges  
+  resume-session: false     # Disabled
+```
+
+Perfect for:
+- Multi-step debugging sessions
+- Feature implementation across multiple files
+- Extended code reviews
+- Iterative optimization
 
 ## 🧪 Test It Out
 
