@@ -31,6 +31,7 @@ class AgentConfig:
     cwd: str
     system_prompt: str
     resume_session: Union[bool, int] = False  # False, True (5 default), or specific number
+    resource_dirs: List[str] = None  # Optional additional directories to add via --add-dir
     
 
 class AgentManager:
@@ -96,10 +97,15 @@ class AgentManager:
             # Keep cwd as-is for now - it will be resolved during execution
             # This allows for different behaviors based on the execution context
             
-            # Parse optional resume-session field
+            # Parse optional fields
             resume_session = False
+            resource_dirs = None
+            
             if 'optional' in frontmatter and isinstance(frontmatter['optional'], dict):
-                resume_val = frontmatter['optional'].get('resume-session', False)
+                optional = frontmatter['optional']
+                
+                # Parse resume-session
+                resume_val = optional.get('resume-session', False)
                 if isinstance(resume_val, bool):
                     resume_session = resume_val
                 elif isinstance(resume_val, int) and resume_val > 0:
@@ -115,6 +121,16 @@ class AgentManager:
                     elif parts[0].isdigit():
                         # Just a number like "5"
                         resume_session = int(parts[0])
+                
+                # Parse resource_dirs (similar to tools parsing)
+                resource_dirs_val = optional.get('resource_dirs')
+                if resource_dirs_val:
+                    if isinstance(resource_dirs_val, str):
+                        # Parse comma-separated string like tools
+                        resource_dirs = [d.strip() for d in resource_dirs_val.split(',')]
+                    elif isinstance(resource_dirs_val, list):
+                        # Already a list
+                        resource_dirs = resource_dirs_val
             
             return AgentConfig(
                 name=config_path.stem,
@@ -124,7 +140,8 @@ class AgentManager:
                 model=frontmatter['model'],
                 cwd=cwd,
                 system_prompt=system_prompt,
-                resume_session=resume_session
+                resume_session=resume_session,
+                resource_dirs=resource_dirs
             )
             
         except yaml.YAMLError as e:
@@ -239,6 +256,24 @@ class AgentManager:
             
             # Add --add-dir flag to ensure Claude has access to the working directory
             cmd.extend(['--add-dir', working_dir])
+            
+            # Add any additional resource directories specified in agent config
+            if agent_config.resource_dirs:
+                for resource_dir in agent_config.resource_dirs:
+                    # Resolve resource_dir relative to the working directory
+                    if not os.path.isabs(resource_dir):
+                        # Relative path - resolve from working directory
+                        resolved_dir = os.path.abspath(os.path.join(working_dir, resource_dir))
+                    else:
+                        # Absolute path - use as-is  
+                        resolved_dir = os.path.abspath(os.path.expandvars(resource_dir))
+                    
+                    # Check if directory exists before adding
+                    if os.path.exists(resolved_dir) and os.path.isdir(resolved_dir):
+                        cmd.extend(['--add-dir', resolved_dir])
+                        logger.info(f"Added resource directory: {resolved_dir}")
+                    else:
+                        logger.warning(f"Resource directory not found or not a directory: {resolved_dir}")
             
             # Append system prompt instruction to use the working directory
             working_dir_instruction = f"\n\nIMPORTANT: You are currently working in the directory: {working_dir}\nWhen creating or saving files without an explicit path, always save them in the current working directory using relative paths (e.g., ./filename). Only save files elsewhere if the user explicitly specifies a different path."
