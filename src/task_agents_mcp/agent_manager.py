@@ -258,6 +258,10 @@ class AgentManager:
             cmd.extend(['--add-dir', working_dir])
             
             # Add any additional resource directories specified in agent config
+            resolved_resource_dirs = []
+            accessible_resource_dirs = []
+            missing_resource_dirs = []
+            
             if agent_config.resource_dirs:
                 for resource_dir in agent_config.resource_dirs:
                     # Resolve resource_dir relative to the working directory
@@ -268,15 +272,29 @@ class AgentManager:
                         # Absolute path - use as-is  
                         resolved_dir = os.path.abspath(os.path.expandvars(resource_dir))
                     
+                    resolved_resource_dirs.append((resource_dir, resolved_dir))
+                    
                     # Check if directory exists before adding
                     if os.path.exists(resolved_dir) and os.path.isdir(resolved_dir):
                         cmd.extend(['--add-dir', resolved_dir])
                         logger.info(f"Added resource directory: {resolved_dir}")
+                        accessible_resource_dirs.append(resolved_dir)
                     else:
                         logger.warning(f"Resource directory not found or not a directory: {resolved_dir}")
+                        missing_resource_dirs.append((resource_dir, resolved_dir))
             
-            # Append system prompt instruction to use the working directory
-            working_dir_instruction = f"\n\nIMPORTANT: You are currently working in the directory: {working_dir}\nWhen creating or saving files without an explicit path, always save them in the current working directory using relative paths (e.g., ./filename). Only save files elsewhere if the user explicitly specifies a different path."
+            # Build dynamic resource directory instruction
+            resource_info = []
+            if accessible_resource_dirs:
+                resource_info.append(f"ACCESSIBLE RESOURCES: {', '.join(accessible_resource_dirs)}")
+            if missing_resource_dirs:
+                missing_list = [f"{orig} (looked at: {resolved})" for orig, resolved in missing_resource_dirs]
+                resource_info.append(f"MISSING RESOURCES: {', '.join(missing_list)}")
+            
+            # Append system prompt instruction to inform about the working directory and resources
+            working_dir_instruction = f"\n\nWORKING DIRECTORY CONTEXT: You are currently operating from the directory: {working_dir}"
+            if resource_info:
+                working_dir_instruction += f"\n{chr(10).join(resource_info)}"
             
             # Combine the original system prompt with the working directory instruction
             combined_system_prompt = agent_config.system_prompt + working_dir_instruction

@@ -16,7 +16,7 @@ You are Quinn, a Senior Developer & Test Architect.
 
 ### Initial Resource Verification
 When first called, IMMEDIATELY:
-1. Check access to available resource directories: "Verifying resource access..."
+1. Check access to ./bmad-core directory: "Verifying resource access..."
 2. List available resources you can access
 3. Report status: "✅ Resources accessible" or "⚠️ Missing: [list]"
 4. If missing resources, ASK: "Some resources are missing. How should I proceed?"
@@ -59,10 +59,10 @@ When user requests help, show these numbered options:
 2. create-doc {template} - Create test documentation
 
 ## BMad Resources
-Load these resources using Read tool when needed (paths will be provided at runtime):
-- Tasks: [resource_dir]/tasks/review-story.md
-- Data: [resource_dir]/data/technical-preferences.md
-- Templates: [resource_dir]/templates/story-tmpl.yaml
+Load these resources using Read tool when needed:
+- Tasks: ./bmad-core/tasks/review-story.md
+- Data: ./bmad-core/data/technical-preferences.md
+- Templates: ./bmad-core/templates/story-tmpl.yaml
 
 ## Interactive Workflow
 

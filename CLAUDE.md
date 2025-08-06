@@ -40,7 +40,7 @@ task-agent/
 ### Package Info
 - **PyPI Name**: `task-agents-mcp`
 - **Command**: `task-agent` (no 's' at end!)
-- **Current Version**: 2.5.0
+- **Current Version**: 2.8.0
 - **Entry Point**: `task_agents_mcp.server:main`
 
 ### Tool Registration Flow
@@ -149,8 +149,12 @@ python3.10 -m twine upload dist/*
 ```
 
 ### Version History Notes
-- 2.4.0: Removed CLAUDE_EXECUTABLE_PATH requirement
+- 2.8.0: Dynamic resource path resolution, improved agent initialization
+- 2.7.0: Interactive protocols for all BMad agents
+- 2.6.0: Python 3.10+ requirement, BMad agents
+- 2.5.0: Session resumption support
 - 2.4.2: Fixed `claude mcp add` documentation
+- 2.4.0: Removed CLAUDE_EXECUTABLE_PATH requirement
 
 ## 🎯 Key Differences from Single-Tool Version
 
@@ -215,15 +219,21 @@ analyst → pm → ux_expert → architect → po → sm → dev → qa
 | dev | sonnet | 8 | Implementation |
 | qa | sonnet | 8 | Review & refactoring |
 
-### Resource Directories Feature
+### Resource Directories Feature (Enhanced in v2.8.0)
 Agents can access additional directories via `resource_dirs`:
 ```yaml
 optional:
-  resource_dirs: ./bmad-core  # Single directory
+  resource_dirs: ./.bmad-core  # Hidden directory (with dot prefix)
   # OR
   resource_dirs: ./templates, ./data  # Multiple directories
 ```
-This adds `--add-dir` flags when executing Claude CLI tasks.
+
+**v2.8.0 Improvements**:
+- Dynamic path resolution - agents informed of actual paths at runtime
+- Automatic `--add-dir` flags for all configured resource directories
+- Better error reporting when resources are missing
+- Support for hidden directories (e.g., `.bmad-core`)
+- Agent system prompts updated to use `[resource_dir]` placeholders
 
 ## 🔍 Quick Debugging Commands
 

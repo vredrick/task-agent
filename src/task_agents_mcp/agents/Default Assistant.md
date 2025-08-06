@@ -3,7 +3,9 @@ agent-name: Default Assistant
 description: General-purpose AI assistant for various software engineering tasks
 tools: Read, Write, Edit, MultiEdit, Bash, Grep, Search, Glob
 model: sonnet
-cwd: /Volumes/vredrick2/test
+cwd: .
+optional:
+  resume-session: true  # Default 5 exchanges for general tasks
 ---
 
 System-prompt:

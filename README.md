@@ -2,6 +2,8 @@
 
 Get a team of specialized AI agents in Claude Code with just 2 commands! Each agent (code reviewer, debugger, test runner, etc.) appears as a separate tool, giving you instant access to focused expertise.
 
+**v2.8.0** - Dynamic resource paths and improved agent initialization
+
 ## 🎯 What You Get
 
 ### BMad Methodology Agents (NEW!)
@@ -178,17 +180,20 @@ Restart Claude Desktop and use the same commands!
 
 2. That's it! Use with: `"Have security_auditor check for SQL injection"`
 
-### Resource Directories (NEW!)
-Agents can now access additional directories beyond their working directory:
+### Resource Directories (v2.8.0 - Enhanced!)
+Agents can now access additional directories with dynamic path resolution:
 
 ```yaml
 optional:
-  resource_dirs: ./bmad-core  # Single directory
+  resource_dirs: ./.bmad-core  # Hidden directory (with dot prefix)
   # OR
   resource_dirs: ./templates, ./data, ./scripts  # Multiple directories
 ```
 
-This allows agents to access shared resources, templates, and tools.
+**New in v2.8.0**: 
+- Dynamic resource path resolution - agents are informed of actual paths at runtime
+- Better error reporting when resources are missing
+- Support for hidden directories (e.g., `.bmad-core`)
 
 ### Session Resumption (v2.5.0+)
 
