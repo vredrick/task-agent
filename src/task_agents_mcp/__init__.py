@@ -1,6 +1,6 @@
 """Task-Agents Multi-Tool MCP Server - Each specialized AI agent as an individual MCP tool."""
 
-__version__ = "2.5.0"
+__version__ = "2.6.0"
 
 from .server import mcp
 
