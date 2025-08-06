@@ -56,6 +56,7 @@ claude "Show available agents using agents://list"
 
 ## Version History
 
+- **2.9.0**: Session reset parameter for agents with resume-session support
 - **2.8.0**: Dynamic resource path resolution, improved agent initialization
 - **2.7.0**: Interactive protocols for all BMad agents
 - **2.6.0**: Python 3.10+ requirement, BMad agents

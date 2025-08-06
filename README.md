@@ -2,7 +2,7 @@
 
 Get a team of specialized AI agents in Claude Code with just 2 commands! Each agent (code reviewer, debugger, test runner, etc.) appears as a separate tool, giving you instant access to focused expertise.
 
-**v2.8.0** - Dynamic resource paths and improved agent initialization
+**v2.9.0** - Session reset capability for agents with resume-session support
 
 ## 🎯 What You Get
 
@@ -195,9 +195,10 @@ optional:
 - Better error reporting when resources are missing
 - Support for hidden directories (e.g., `.bmad-core`)
 
-### Session Resumption (v2.5.0+)
+### Session Management (v2.9.0+)
 
-Agents can now maintain context across multiple exchanges! Add to any agent:
+#### Session Resumption
+Agents can maintain context across multiple exchanges! Add to any agent:
 
 ```yaml
 optional:
@@ -211,6 +212,16 @@ Perfect for:
 - Feature implementation across multiple files
 - Extended code reviews
 - Iterative optimization
+
+#### Session Reset (NEW!)
+When you need to start fresh with an agent that has session support, Claude can now reset the session:
+
+```
+"Reset the analyst session and start a new project analysis"
+"Clear the dev agent's context and begin implementing a different feature"
+```
+
+Claude will automatically use the `session_reset` parameter when you request a fresh start. This clears all previous context while keeping the agent ready for new tasks.
 
 ## 🧪 Test It Out
 

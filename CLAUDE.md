@@ -149,6 +149,7 @@ python3.10 -m twine upload dist/*
 ```
 
 ### Version History Notes
+- 2.9.0: Session reset parameter for agents with resume-session
 - 2.8.0: Dynamic resource path resolution, improved agent initialization
 - 2.7.0: Interactive protocols for all BMad agents
 - 2.6.0: Python 3.10+ requirement, BMad agents
@@ -234,6 +235,41 @@ optional:
 - Better error reporting when resources are missing
 - Support for hidden directories (e.g., `.bmad-core`)
 - Agent system prompts updated to use `[resource_dir]` placeholders
+
+### Session Management Features (v2.9.0)
+
+#### Session Resumption
+Agents can maintain context across multiple exchanges:
+```yaml
+optional:
+  resume-session: true      # 5 exchanges (default)
+  resume-session: true 10   # 10 exchanges  
+  resume-session: false     # Disabled
+```
+
+#### Session Reset Parameter (NEW in v2.9.0)
+For agents with `resume-session: true`, a `session_reset` parameter is available:
+
+**Usage in Claude:**
+```python
+# Normal call - maintains session context
+analyst(prompt="Continue our analysis")
+
+# Reset session - starts fresh
+analyst(prompt="Start new analysis", session_reset=True)
+```
+
+**Key Features:**
+- Only appears for agents with session support
+- Default: `session_reset=False` (maintains session)
+- When `True`: Clears session history before execution
+- Useful when user wants to start fresh with an agent
+
+**Example Scenario:**
+```
+User: "Reset the analyst session and start analyzing a new project"
+Claude: [Calls analyst with session_reset=True]
+```
 
 ## 🔍 Quick Debugging Commands
 

@@ -168,12 +168,14 @@ class AgentManager:
         }
         
     async def execute_task(self, selected_agent: Dict[str, Any], task_description: str, 
+                          session_reset: bool = False,
                           progress_callback: Optional[Callable[[str], Awaitable[None]]] = None) -> str:
         """Execute a task using the selected agent via Claude Code CLI.
         
         Args:
             selected_agent: The agent configuration to use
             task_description: The task to execute
+            session_reset: Whether to reset the session before executing (default: False)
             progress_callback: Optional async callback for progress updates
         
         Returns:
@@ -181,10 +183,17 @@ class AgentManager:
         """
         agent_config = selected_agent['config']
         
+        # Handle session reset if requested
+        if session_reset and agent_config.resume_session:
+            logger.info(f"Resetting session for agent: {agent_config.agent_name}")
+            self.session_store.clear_chain(agent_config.agent_name)
+            if progress_callback:
+                await progress_callback(f"🔄 Session reset for {agent_config.agent_name}")
+        
         # Determine if we should resume a session
         resume_session_id = None
         was_resume = False
-        if agent_config.resume_session:
+        if agent_config.resume_session and not session_reset:
             # Calculate max exchanges
             if agent_config.resume_session is True:
                 max_exchanges = 5  # Default when just "true"
