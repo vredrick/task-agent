@@ -29,7 +29,10 @@ A complete development workflow using specialized AI agents:
 
 ### Step 1: Install the package
 ```bash
-python3 -m pip install task-agents-mcp
+# Requires Python 3.10 or higher
+python3.10 -m pip install task-agents-mcp
+# or
+python3.11 -m pip install task-agents-mcp
 ```
 
 ### Step 2: Add to Claude Code
@@ -81,8 +84,10 @@ Follow the BMad methodology for complete project development:
 
 ## 📦 Requirements
 
-- Python 3.10 or higher
+- **Python 3.10 or higher** (required by fastmcp dependency)
 - Claude Code CLI ([Download here](https://claude.ai/download))
+
+⚠️ **Important**: If `python3 --version` shows less than 3.10, use `python3.10` or `python3.11` explicitly in all commands.
 
 ## 🛠️ Custom Agents
 
@@ -219,19 +224,29 @@ claude "Use analyst to research the market for a project management tool"
 
 ### "command not found: task-agent"
 ```bash
-# Make sure you installed it:
-python3 -m pip install task-agents-mcp
+# Make sure you installed it with Python 3.10+:
+python3.10 -m pip install task-agents-mcp
+# or
+python3.11 -m pip install task-agents-mcp
 ```
 
 ### "spawn task-agent ENOENT"
 ```bash
-# Reinstall the package:
-python3 -m pip install --upgrade task-agents-mcp
+# Reinstall with the correct Python version:
+python3.10 -m pip install --upgrade task-agents-mcp
+```
+
+### "ResolutionImpossible" or dependency conflicts?
+This happens when using Python < 3.10. Solution:
+```bash
+# Use Python 3.10 or higher explicitly:
+python3.10 -m pip install task-agents-mcp
 ```
 
 ### Agents not showing up?
 - Restart Claude Code/Desktop
-- Check Python version: `python3 --version` (need 3.10+)
+- Check Python version: `python3 --version` (must be 3.10+)
+- If less than 3.10, use `python3.10` or `python3.11` in all commands
 
 ## 📚 Advanced Usage
 

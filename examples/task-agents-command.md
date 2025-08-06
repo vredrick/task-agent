@@ -49,7 +49,7 @@ Create the task-agents directory with all default agent configurations in your c
 !    echo "❌ Error: task-agents-mcp package not found in any Python installation."
 !    echo ""
 !    echo "Please install it with one of these commands:"
-!    echo "  python3 -m pip install task-agents-mcp"
+!    echo "  python3.10 -m pip install task-agents-mcp  # Requires Python 3.10+"
 !    echo "  python3.11 -m pip install task-agents-mcp"
 !    echo "  pip install task-agents-mcp"
 !    exit 1

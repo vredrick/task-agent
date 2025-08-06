@@ -1,13 +1,17 @@
 # Installation Commands for Testing BMad Agents
 
+⚠️ **Python 3.10+ Required**: The package requires Python 3.10 or higher due to the fastmcp dependency.
+
 ## Option 1: Install from Source (Recommended for Testing)
 
 ```bash
 # 1. Navigate to your Claude Code project where you want to test
 cd /path/to/your/test-project
 
-# 2. Install directly from the GitHub branch
-python3.11 -m pip install git+https://github.com/vredrick/task-agent.git@bmad-agents
+# 2. Install directly from PyPI (now published!)
+python3.10 -m pip install task-agents-mcp
+# or if you have Python 3.11+
+python3.11 -m pip install task-agents-mcp
 
 # 3. Add to Claude Code (project-specific)
 claude mcp add task-agent task-agent -s project
@@ -25,7 +29,9 @@ git clone https://github.com/vredrick/task-agent.git
 cd task-agent
 git checkout bmad-agents
 
-# 2. Install in development mode
+# 2. Install in development mode (requires Python 3.10+)
+python3.10 -m pip install -e .
+# or
 python3.11 -m pip install -e .
 
 # 3. Add to Claude Code
@@ -38,8 +44,10 @@ claude "Show available agents using agents://list"
 ## Option 3: Install in Existing Project with BMad Resources
 
 ```bash
-# 1. Install the package
-python3.11 -m pip install git+https://github.com/vredrick/task-agent.git@bmad-agents
+# 1. Install the package from PyPI
+python3.10 -m pip install task-agents-mcp
+# or
+python3.11 -m pip install task-agents-mcp
 
 # 2. Create BMad resource directory (optional, for full functionality)
 mkdir -p bmad-core/tasks
@@ -84,8 +92,8 @@ claude "Use pm to create a PRD based on the analyst's research"
 # Check if task-agent is available
 which task-agent
 
-# Check version
-python3.11 -c "import task_agents_mcp; print(task_agents_mcp.__version__)"
+# Check version (use Python 3.10+)
+python3.10 -c "import task_agents_mcp; print(task_agents_mcp.__version__)"
 
 # Check MCP configuration
 cat .mcp.json
@@ -101,16 +109,24 @@ If you encounter issues:
 
 1. **"spawn task-agent ENOENT"**: Package not in PATH
    ```bash
-   python3.11 -m pip uninstall task-agents-mcp
-   python3.11 -m pip install git+https://github.com/vredrick/task-agent.git@bmad-agents
+   python3.10 -m pip uninstall task-agents-mcp
+   python3.10 -m pip install task-agents-mcp
    ```
 
-2. **Agents not showing up**: Check the installation
+2. **"ResolutionImpossible" error**: Using Python < 3.10
    ```bash
-   python3.11 -m pip show task-agents-mcp
+   # Check your Python version
+   python3 --version
+   # If less than 3.10, use python3.10 or python3.11 explicitly
+   python3.10 -m pip install task-agents-mcp
    ```
 
-3. **Permission denied**: Claude Code needs approval
+3. **Agents not showing up**: Check the installation
+   ```bash
+   python3.10 -m pip show task-agents-mcp
+   ```
+
+4. **Permission denied**: Claude Code needs approval
    - Claude will prompt you to approve the MCP server
    - Select "Approve" when prompted
 

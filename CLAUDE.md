@@ -74,10 +74,13 @@ for agent_name, agent_config in agent_manager.agents.items():
 ### Installation Issues
 ```bash
 # User reports "spawn task-agent ENOENT"
+# Must use Python 3.10 or higher
+python3.10 -m pip install task-agents-mcp
+# or
 python3.11 -m pip install task-agents-mcp
 
 # Or from source
-python3.11 -m pip install -e /path/to/task-agent
+python3.10 -m pip install -e /path/to/task-agent
 ```
 
 ### Adding to Claude Code
@@ -113,7 +116,7 @@ claude "Show available agents using agents://list"
 
 ### 1. "spawn task-agent ENOENT"
 - **Cause**: Package not installed or not in PATH
-- **Fix**: Install with `python3.11 -m pip install task-agents-mcp`
+- **Fix**: Install with Python 3.10+: `python3.10 -m pip install task-agents-mcp`
 
 ### 2. "missing required argument 'commandOrUrl'"
 - **Cause**: Wrong `claude mcp add` syntax in docs
@@ -130,7 +133,7 @@ claude "Show available agents using agents://list"
 2. Update version in both:
    - `pyproject.toml`
    - `src/task_agents_mcp/__init__.py`
-3. Test locally: `python3.11 -m pip install -e .`
+3. Test locally: `python3.10 -m pip install -e .` (or python3.11)
 4. Test with Claude Code: `claude "Use code_reviewer..."`
 
 ### Publishing to PyPI
@@ -138,11 +141,11 @@ claude "Show available agents using agents://list"
 # Clean previous builds
 rm -rf dist/ build/ *.egg-info
 
-# Build
-python3.11 -m build
+# Build (requires Python 3.10+)
+python3.10 -m build
 
 # Upload
-python3.11 -m twine upload dist/*
+python3.10 -m twine upload dist/*
 ```
 
 ### Version History Notes
@@ -229,13 +232,14 @@ This adds `--add-dir` flags when executing Claude CLI tasks.
 which task-agent
 
 # Check Python version
-python3 --version  # Need 3.10+
+python3 --version  # Must be 3.10+
+# If less than 3.10, use python3.10 or python3.11 explicitly
 
 # Test server directly
 task-agent
 
-# Check package version
-python3 -c "import task_agents_mcp; print(task_agents_mcp.__version__)"
+# Check package version (use Python 3.10+)
+python3.10 -c "import task_agents_mcp; print(task_agents_mcp.__version__)"
 
 # See MCP config
 cat .mcp.json
