@@ -5,10 +5,11 @@
 You're working with a **multi-tool MCP server** where each AI agent is exposed as its own tool. This is NOT the single-tool version (that's a separate repo).
 
 ### Key Architecture Points
-- Each agent = separate MCP tool (e.g., `code_reviewer`, `debugger`)
+- Each agent = separate MCP tool (e.g., `analyst`, `dev`, `qa`)
 - No routing/delegate function - direct tool invocation
-- Tool names: lowercase with underscores (e.g., "Code Reviewer" → `code_reviewer`)
+- Tool names: lowercase with underscores (e.g., "ux-expert" → `ux_expert`)
 - Built on FastMCP with dynamic tool registration
+- BMad methodology agents for complete development workflow
 
 ## 📁 Project Structure
 
@@ -18,13 +19,17 @@ task-agent/
 │   ├── __init__.py          # Version: 2.4.2
 │   ├── server.py            # Multi-tool MCP server (main entry)
 │   └── agent_manager.py     # Agent loader/executor (unchanged from single-tool)
-├── task-agents/             # Built-in agent configs
-│   ├── code-reviewer.md
-│   ├── debugger.md
-│   ├── default-assistant.md
-│   ├── documentation-writer.md
-│   ├── performance-optimizer.md
-│   └── test-runner.md
+├── task-agents/             # Built-in agent configs (BMad agents)
+│   ├── analyst.md           # Business Analyst
+│   ├── pm.md                # Product Manager
+│   ├── ux-expert.md         # UX Designer
+│   ├── architect.md         # Solution Architect
+│   ├── po.md                # Product Owner
+│   ├── sm.md                # Scrum Master
+│   ├── dev.md               # Full Stack Developer
+│   ├── qa.md                # Senior Dev & QA
+│   ├── default-assistant.md # General assistant
+│   └── session-tester.md    # Session testing
 ├── pyproject.toml           # Package config (name: task-agents-mcp)
 ├── README.md                # User documentation
 └── CLAUDE.md                # This file
@@ -35,7 +40,7 @@ task-agent/
 ### Package Info
 - **PyPI Name**: `task-agents-mcp`
 - **Command**: `task-agent` (no 's' at end!)
-- **Current Version**: 2.4.2
+- **Current Version**: 2.5.0
 - **Entry Point**: `task_agents_mcp.server:main`
 
 ### Tool Registration Flow
@@ -94,8 +99,11 @@ claude mcp add task-agent task-agent -s project
 
 ### Testing
 ```bash
-# Quick test
-claude "Use code_reviewer to analyze this: def add(a, b): return a + b"
+# Quick test with BMad agents
+claude "Use analyst to brainstorm ideas for a todo app"
+
+# Test the full workflow
+claude "Use pm to create a PRD for a shopping cart feature"
 
 # List all agents
 claude "Show available agents using agents://list"
@@ -174,6 +182,45 @@ python3.11 -m twine upload dist/*
 - Different models → Change `model:` in agent config
 - Tool restrictions → Modify `tools:` list
 - Working directory → Adjust `cwd:` setting
+- Resource access → Add `resource_dirs:` for additional directories
+
+## 🚨 BMad Agents Overview
+
+The project now includes BMad methodology agents for complete development workflow:
+
+### Agent Workflow Pipeline
+```
+analyst → pm → ux_expert → architect → po → sm → dev → qa
+```
+
+### Key Features
+- **Each agent has specific persona**: Defined roles and responsibilities
+- **Resource directories**: All BMad agents access `./bmad-core` resources
+- **Model optimization**: Strategic agents use opus, tactical use sonnet
+- **Session resumption**: Configured exchanges per agent role
+- **Structured workflow**: Clear handoffs between agents
+
+### Agent Configurations
+| Agent | Model | Exchanges | Purpose |
+|-------|-------|-----------|---------|
+| analyst | opus | 15 | Discovery & research |
+| pm | opus | 15 | Product requirements |
+| ux_expert | opus | 15 | UI/UX design |
+| architect | opus | 15 | Technical design |
+| po | sonnet | 5 | Validation & sharding |
+| sm | sonnet | 5 | Story creation |
+| dev | sonnet | 8 | Implementation |
+| qa | sonnet | 8 | Review & refactoring |
+
+### Resource Directories Feature
+Agents can access additional directories via `resource_dirs`:
+```yaml
+optional:
+  resource_dirs: ./bmad-core  # Single directory
+  # OR
+  resource_dirs: ./templates, ./data  # Multiple directories
+```
+This adds `--add-dir` flags when executing Claude CLI tasks.
 
 ## 🔍 Quick Debugging Commands
 

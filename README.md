@@ -4,14 +4,26 @@ Get a team of specialized AI agents in Claude Code with just 2 commands! Each ag
 
 ## 🎯 What You Get
 
-| Agent Tool | What it does | Perfect for |
-|------------|--------------|-------------|
-| `code_reviewer` | Reviews code quality & security | PRs, security checks |
-| `debugger` | Finds and fixes bugs | Error messages, crashes |
-| `test_runner` | Creates and runs tests | Unit tests, coverage |
-| `documentation_writer` | Writes technical docs | READMEs, API docs |
-| `performance_optimizer` | Makes code faster | Bottlenecks, optimization |
-| `default_assistant` | General coding help | Everything else |
+### BMad Methodology Agents (NEW!)
+A complete development workflow using specialized AI agents:
+
+| Agent Tool | Role | When to Use |
+|------------|------|-------------|
+| `analyst` | Business Analyst | Project discovery, market research, requirements gathering |
+| `pm` | Product Manager | Create PRDs, define features, prioritize backlog |
+| `ux_expert` | UX Designer | UI/UX specs, wireframes, design systems |
+| `architect` | Solution Architect | Technical design, API design, database schema |
+| `po` | Product Owner | Validate artifacts, shard docs into epics |
+| `sm` | Scrum Master | Create developer-ready stories from epics |
+| `dev` | Full Stack Developer | Implement code from stories |
+| `qa` | Senior Dev & QA | Code review, refactoring, test coverage |
+
+**BMad Workflow**: `analyst` → `pm` → `ux_expert` → `architect` → `po` → `sm` → `dev` → `qa`
+
+### Test Agents
+| Agent Tool | What it does |
+|------------|--------------|  
+| `default_assistant` | General coding help |
 
 ## 🚀 Quick Install (2 Steps)
 
@@ -29,12 +41,42 @@ That's it! ✅ Claude Code will ask for approval, then you're ready to use your 
 
 ## 💬 How to Use
 
-Just ask Claude to use any agent:
+### BMad Workflow Example
+Follow the BMad methodology for complete project development:
 
 ```
-"Use code_reviewer to check my authentication code"
-"Have debugger help with this error message"
-"Get test_runner to create unit tests for user.py"
+# 1. Start with discovery
+"Use analyst to research the market for a task management app"
+
+# 2. Define product requirements  
+"Use pm to create a PRD based on the analysis"
+
+# 3. Design the user experience
+"Use ux_expert to create UI specifications"
+
+# 4. Create technical architecture
+"Use architect to design the system architecture"
+
+# 5. Validate and prepare work
+"Use po to validate the PRD and architecture alignment"
+
+# 6. Create developer stories
+"Use sm to create the next story for development"
+
+# 7. Implement the code
+"Use dev to implement the story"
+
+# 8. Review and improve
+"Use qa to review the implementation"
+```
+
+### Quick Agent Commands
+```
+"Use analyst to brainstorm ideas for [project]"
+"Use pm to create a PRD for [feature]"
+"Use architect to design API for [service]"
+"Use dev to implement [story]"
+"Use qa to review recent changes"
 ```
 
 ## 📦 Requirements
@@ -86,24 +128,28 @@ Restart Claude Desktop and use the same commands!
 
 ## 💡 Examples
 
-### Code Review
+### BMad Agent Examples
 ```
-"Use code_reviewer to check the security of my login.py file"
-```
+# Research and ideation
+"Use analyst to research competitors in the e-commerce space"
 
-### Debugging
-```
-"I'm getting a TypeError in line 42. Use debugger to help fix it"
-```
+# Product planning
+"Use pm to create a PRD for a shopping cart feature"
 
-### Writing Tests
-```
-"Have test_runner create comprehensive tests for the User class"
-```
+# Design
+"Use ux_expert to create UI mockups for the checkout flow"
 
-### Documentation
-```
-"Use documentation_writer to create API docs for the payment module"
+# Architecture
+"Use architect to design microservices architecture"
+
+# Story creation
+"Use sm to create the next implementation story"
+
+# Development
+"Use dev to implement story-001 from /docs/stories/"
+
+# Quality assurance
+"Use qa to review and refactor the shopping cart implementation"
 ```
 
 ## Creating Custom Agents
@@ -118,6 +164,7 @@ Restart Claude Desktop and use the same commands!
    cwd: .
    optional:
      resume-session: true 10  # Enable session resumption
+     resource_dirs: ./security-tools  # Access additional directories
    ---
    
    System-prompt:
@@ -125,6 +172,18 @@ Restart Claude Desktop and use the same commands!
    ```
 
 2. That's it! Use with: `"Have security_auditor check for SQL injection"`
+
+### Resource Directories (NEW!)
+Agents can now access additional directories beyond their working directory:
+
+```yaml
+optional:
+  resource_dirs: ./bmad-core  # Single directory
+  # OR
+  resource_dirs: ./templates, ./data, ./scripts  # Multiple directories
+```
+
+This allows agents to access shared resources, templates, and tools.
 
 ### Session Resumption (v2.5.0+)
 
@@ -146,11 +205,14 @@ Perfect for:
 ## 🧪 Test It Out
 
 ```bash
-# Quick test
-claude "Use code_reviewer to analyze this: def add(a, b): return a + b"
+# Quick test with BMad agents
+claude "Use analyst to brainstorm ideas for a todo app"
 
-# See all agents
+# See all available agents
 claude "Show available agents using agents://list"
+
+# Start a full BMad workflow
+claude "Use analyst to research the market for a project management tool"
 ```
 
 ## ❓ Troubleshooting
