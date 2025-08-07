@@ -234,7 +234,6 @@ class AgentManager:
         cmd = [
             claude_path,
             '-p', task_description,
-            '--system-prompt', agent_config.system_prompt,
             '--output-format', 'stream-json',
             '--verbose',  # Required for stream-json output
             '--allowedTools', *agent_config.tools,  # Unpack list for space-separated tools
@@ -263,10 +262,7 @@ class AgentManager:
             # Expand environment variables and make absolute
             working_dir = os.path.abspath(os.path.expandvars(cwd))
             
-            # Add --add-dir flag to ensure Claude has access to the working directory
-            cmd.extend(['--add-dir', working_dir])
-            
-            # Add any additional resource directories specified in agent config
+            # Add any resource directories specified in agent config
             resolved_resource_dirs = []
             accessible_resource_dirs = []
             missing_resource_dirs = []
@@ -300,20 +296,29 @@ class AgentManager:
                 missing_list = [f"{orig} (looked at: {resolved})" for orig, resolved in missing_resource_dirs]
                 resource_info.append(f"MISSING RESOURCES: {', '.join(missing_list)}")
             
-            # Append system prompt instruction to inform about the working directory and resources
-            working_dir_instruction = f"\n\nWORKING DIRECTORY CONTEXT: You are currently operating from the directory: {working_dir}"
+            # Replace [resource_dir] placeholders in system prompt with actual paths
+            system_prompt_with_replacements = agent_config.system_prompt
+            if accessible_resource_dirs:
+                # If we have one resource dir, replace with that path
+                # If we have multiple, replace with a comma-separated list
+                if len(accessible_resource_dirs) == 1:
+                    system_prompt_with_replacements = system_prompt_with_replacements.replace('[resource_dir]', accessible_resource_dirs[0])
+                else:
+                    resource_dirs_str = ', '.join(accessible_resource_dirs)
+                    system_prompt_with_replacements = system_prompt_with_replacements.replace('[resource_dir]', resource_dirs_str)
+            
+            # Add the system prompt with replacements
+            cmd.extend(['--system-prompt', system_prompt_with_replacements])
+            
+            # Build append-system-prompt instruction for working directory and resources
+            append_prompt_parts = []
+            append_prompt_parts.append(f"WORKING DIRECTORY CONTEXT: You are currently operating from the directory: {working_dir}")
             if resource_info:
-                working_dir_instruction += f"\n{chr(10).join(resource_info)}"
+                append_prompt_parts.extend(resource_info)
             
-            # Combine the original system prompt with the working directory instruction
-            combined_system_prompt = agent_config.system_prompt + working_dir_instruction
-            
-            # Update the command to use the combined system prompt
-            # Find and replace the system prompt in the command
-            for i, arg in enumerate(cmd):
-                if arg == '--system-prompt' and i + 1 < len(cmd):
-                    cmd[i + 1] = combined_system_prompt
-                    break
+            # Add append-system-prompt flag
+            append_prompt = '\n'.join(append_prompt_parts)
+            cmd.extend(['--append-system-prompt', append_prompt])
             
             # Log the full command for debugging
             logger.info(f"Agent config cwd: {agent_config.cwd}")

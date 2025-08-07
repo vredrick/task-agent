@@ -2,7 +2,7 @@
 
 Get a team of specialized AI agents in Claude Code with just 2 commands! Each agent (code reviewer, debugger, test runner, etc.) appears as a separate tool, giving you instant access to focused expertise.
 
-**v2.9.0** - Session reset capability for agents with resume-session support
+**v2.9.1** - Enhanced resource directory handling with `[resource_dir]` placeholder and `--append-system-prompt`
 
 ## 🎯 What You Get
 
@@ -180,7 +180,7 @@ Restart Claude Desktop and use the same commands!
 
 2. That's it! Use with: `"Have security_auditor check for SQL injection"`
 
-### Resource Directories (v2.8.0 - Enhanced!)
+### Resource Directories (v2.9.1 - Enhanced!)
 Agents can now access additional directories with dynamic path resolution:
 
 ```yaml
@@ -189,6 +189,16 @@ optional:
   # OR
   resource_dirs: ./templates, ./data, ./scripts  # Multiple directories
 ```
+
+In your agent's system prompt, use `[resource_dir]` placeholder:
+```markdown
+You have access to resources in: [resource_dir]
+```
+
+**New in v2.9.1**: 
+- `[resource_dir]` placeholder in system prompts - automatically replaced with actual paths
+- Uses `--append-system-prompt` for clean context separation
+- Working directory context added separately from main prompt
 
 **New in v2.8.0**: 
 - Dynamic resource path resolution - agents are informed of actual paths at runtime
