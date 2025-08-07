@@ -11,7 +11,8 @@ import os
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
+import re
 
 from .agent_manager import AgentManager
 
@@ -87,7 +88,7 @@ def create_agent_tool_function(agent_name: str, agent_config):
     # Check if agent supports session resumption
     if agent_config.resume_session:
         # Create function with session_reset parameter
-        async def agent_tool_impl(prompt: str, session_reset: bool = False) -> str:
+        async def agent_tool_impl(prompt: str, ctx: Context, session_reset: bool = False) -> str:
             """Execute agent task with optional session reset."""
             try:
                 logger.info(f"=== {agent_name} Tool Called ===")
@@ -96,14 +97,56 @@ def create_agent_tool_function(agent_name: str, agent_config):
                 if session_reset:
                     logger.info(f"Session reset requested for {agent_name}")
                 
+                # Create progress bridge function
+                async def progress_bridge(message: str):
+                    """Bridge between agent progress messages and MCP context."""
+                    try:
+                        # Log if we have a progress token (for debugging)
+                        if hasattr(ctx, '_progress_token') and ctx._progress_token:
+                            logger.debug(f"Progress token present: {ctx._progress_token}")
+                        
+                        # Parse different types of progress messages
+                        if "🚀 Starting" in message or "Starting" in message:
+                            await ctx.report_progress(0, 100)
+                            await ctx.info(message)
+                        elif "🔧 Using tool" in message or "Using tool" in message:
+                            # Extract tool number from message like "🔧 Using tool: Read (#1)"
+                            match = re.search(r'#(\d+)', message)
+                            if match:
+                                tool_num = int(match.group(1))
+                                # Progress: 10% base + 15% per tool, max 90%
+                                progress = min(10 + (tool_num * 15), 90)
+                                await ctx.report_progress(progress, 100)
+                            await ctx.info(message)
+                        elif "🔄 Session reset" in message:
+                            await ctx.report_progress(5, 100)
+                            await ctx.info(message)
+                        elif "✅ Task completed" in message or "completed" in message.lower():
+                            await ctx.report_progress(100, 100)
+                            await ctx.info(message)
+                        elif "⚠️" in message:
+                            # Warning but still complete
+                            await ctx.report_progress(100, 100)
+                            await ctx.warning(message)
+                        else:
+                            # Just log other messages
+                            await ctx.info(message)
+                    except Exception as e:
+                        logger.debug(f"Progress bridge error (non-critical): {e}")
+                
                 # Create the selected agent dict format expected by execute_task
                 selected_agent = {
                     'name': agent_config.name,  # Internal name for logging
                     'config': agent_config
                 }
                 
-                # Execute the task using the selected agent with session_reset
-                result = await agent_manager.execute_task(selected_agent, prompt, session_reset=session_reset)
+                # Execute the task using the selected agent with session_reset and progress callback
+                result = await agent_manager.execute_task(
+                    selected_agent, 
+                    prompt, 
+                    session_reset=session_reset,
+                    progress_callback=progress_bridge
+                )
                 
                 return result
                 
@@ -129,12 +172,46 @@ Returns:
 """
     else:
         # Create function without session_reset parameter (original version)
-        async def agent_tool_impl(prompt: str) -> str:
+        async def agent_tool_impl(prompt: str, ctx: Context) -> str:
             """Execute agent task."""
             try:
                 logger.info(f"=== {agent_name} Tool Called ===")
                 logger.info(f"Current process working directory: {os.getcwd()}")
                 logger.info(f"Task: {prompt[:100]}...")
+                
+                # Create progress bridge function (same as above)
+                async def progress_bridge(message: str):
+                    """Bridge between agent progress messages and MCP context."""
+                    try:
+                        # Log if we have a progress token (for debugging)
+                        if hasattr(ctx, '_progress_token') and ctx._progress_token:
+                            logger.debug(f"Progress token present: {ctx._progress_token}")
+                        
+                        # Parse different types of progress messages
+                        if "🚀 Starting" in message or "Starting" in message:
+                            await ctx.report_progress(0, 100)
+                            await ctx.info(message)
+                        elif "🔧 Using tool" in message or "Using tool" in message:
+                            # Extract tool number from message like "🔧 Using tool: Read (#1)"
+                            match = re.search(r'#(\d+)', message)
+                            if match:
+                                tool_num = int(match.group(1))
+                                # Progress: 10% base + 15% per tool, max 90%
+                                progress = min(10 + (tool_num * 15), 90)
+                                await ctx.report_progress(progress, 100)
+                            await ctx.info(message)
+                        elif "✅ Task completed" in message or "completed" in message.lower():
+                            await ctx.report_progress(100, 100)
+                            await ctx.info(message)
+                        elif "⚠️" in message:
+                            # Warning but still complete
+                            await ctx.report_progress(100, 100)
+                            await ctx.warning(message)
+                        else:
+                            # Just log other messages
+                            await ctx.info(message)
+                    except Exception as e:
+                        logger.debug(f"Progress bridge error (non-critical): {e}")
                 
                 # Create the selected agent dict format expected by execute_task
                 selected_agent = {
@@ -142,8 +219,12 @@ Returns:
                     'config': agent_config
                 }
                 
-                # Execute the task using the selected agent
-                result = await agent_manager.execute_task(selected_agent, prompt)
+                # Execute the task using the selected agent with progress callback
+                result = await agent_manager.execute_task(
+                    selected_agent, 
+                    prompt,
+                    progress_callback=progress_bridge
+                )
                 
                 return result
                 

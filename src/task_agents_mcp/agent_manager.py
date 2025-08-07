@@ -342,36 +342,16 @@ class AgentManager:
                 stdin=asyncio.subprocess.DEVNULL  # Ensure no interactive input is expected
             )
             
-            # Wait for the command to complete - no timeout
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode != 0:
-                error_msg = stderr.decode('utf-8') if stderr else "Unknown error"
-                stdout_msg = stdout.decode('utf-8') if stdout else ""
-                logger.error(f"Claude CLI error (return code {process.returncode}): {error_msg}")
-                if stdout_msg:
-                    logger.error(f"Claude CLI stdout: {stdout_msg}")
-                return f"Error executing Claude CLI (return code {process.returncode}): {error_msg}"
-                
-            # Parse stream-json output
-            output = stdout.decode('utf-8').strip()
-            if not output:
-                logger.warning("Claude CLI returned empty output")
-                stderr_msg = stderr.decode('utf-8') if stderr else ""
-                if stderr_msg:
-                    logger.warning(f"Claude CLI stderr: {stderr_msg}")
-                return "Claude CLI returned empty output. The command may have completed without generating a response."
-            
             # Send initial progress update
             if progress_callback:
                 await progress_callback(f"🚀 Starting {agent_config.agent_name} agent...")
             
-            # Split output into lines for parsing
-            output_lines = output.split('\n')
+            # Stream output line by line for real-time progress
+            output_lines = []
+            stderr_lines = []
             
             # Extract the final assistant message from the stream
             assistant_messages = []  # Collect all text segments
-            logger.debug(f"Total output lines: {len(output_lines)}")
             
             # Track progress events and usage
             tool_count = 0
@@ -380,69 +360,100 @@ class AgentManager:
             total_cost = None
             session_id = None
             
-            for line in output.split('\n'):
-                if line.strip():
-                    try:
-                        event = json.loads(line)
-                        event_type = event.get('type')
-                        logger.debug(f"Event type: {event_type}")
+            # Read stdout line by line for real-time streaming
+            async def read_stream():
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        break
+                    
+                    line_str = line.decode('utf-8').strip()
+                    if line_str:
+                        output_lines.append(line_str)
                         
-                        # Capture session ID from system init
-                        if event_type == 'system' and event.get('subtype') == 'init':
-                            session_id = event.get('session_id')
-                            logger.info(f"Session ID: {session_id}")
-                        
-                        # Look for assistant messages
-                        elif event_type == 'assistant' and 'message' in event:
-                            message = event['message']
-                            if message.get('content'):
-                                content_list = message['content']
-                                # Process content items
-                                for content_item in content_list:
-                                    item_type = content_item.get('type')
-                                    
-                                    if item_type == 'text' and content_item.get('text'):
-                                        # Text content - accumulate all segments
-                                        text_content = content_item['text']
-                                        assistant_messages.append(text_content)
-                                        logger.debug(f"Found assistant text: {text_content[:100]}")
-                                    
-                                    elif item_type == 'tool_use':
-                                        # Tool use content
-                                        tool_name = content_item.get('name', 'unknown')
-                                        tool_count += 1
-                                        tools_used.append(tool_name)
-                                        if progress_callback:
-                                            await progress_callback(f"🔧 Using tool: {tool_name} (#{tool_count})")
-                        
-                        # Also check the result for the final output
-                        elif event_type == 'result':
-                            if event.get('result'):
-                                # The result field might contain the final output
-                                result_text = event['result']
-                                if result_text and isinstance(result_text, str):
-                                    # Override accumulated messages with final result
-                                    assistant_messages = [result_text]
-                                    logger.debug(f"Found result text: {result_text[:100]}")
-                            
-                            # Extract token usage and cost
-                            if 'usage' in event:
-                                token_usage = event['usage']
-                            if 'total_cost_usd' in event:
-                                total_cost = event['total_cost_usd']
-                            
-                            if progress_callback:
-                                await progress_callback("✅ Task completed!")
-                                
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Failed to parse JSON line: {line[:100]}... Error: {e}")
-                        # Check if it's a partial line that might be concatenated
-                        if line.startswith('{') and not line.endswith('}'):
-                            logger.debug("Detected potential partial JSON line, skipping...")
-                        continue
-                    except Exception as e:
-                        logger.error(f"Unexpected error parsing line: {e}")
-                        continue
+                        # Process each line as it arrives for real-time progress
+                        try:
+                            event = json.loads(line_str)
+                            await process_event(event)
+                        except json.JSONDecodeError:
+                            logger.debug(f"Non-JSON line: {line_str[:100]}")
+                        except Exception as e:
+                            logger.debug(f"Error processing line: {e}")
+            
+            # Process events as they arrive
+            async def process_event(event):
+                nonlocal tool_count, session_id
+                event_type = event.get('type')
+                
+                # Capture session ID from system init
+                if event_type == 'system' and event.get('subtype') == 'init':
+                    session_id = event.get('session_id')
+                    logger.info(f"Session ID: {session_id}")
+                
+                # Look for tool use events for progress
+                elif event_type == 'assistant' and 'message' in event:
+                    message = event['message']
+                    if message.get('content'):
+                        for content_item in message['content']:
+                            if content_item.get('type') == 'tool_use':
+                                tool_name = content_item.get('name', 'unknown')
+                                tool_count += 1
+                                tools_used.append(tool_name)
+                                if progress_callback:
+                                    await progress_callback(f"🔧 Using tool: {tool_name} (#{tool_count})")
+                            elif content_item.get('type') == 'text' and content_item.get('text'):
+                                assistant_messages.append(content_item['text'])
+                
+                # Check for completion
+                elif event_type == 'result':
+                    if event.get('result'):
+                        result_text = event['result']
+                        if result_text and isinstance(result_text, str):
+                            assistant_messages.clear()
+                            assistant_messages.append(result_text)
+                    
+                    # Extract token usage
+                    if 'usage' in event:
+                        nonlocal token_usage, total_cost
+                        token_usage = event['usage']
+                    if 'total_cost_usd' in event:
+                        total_cost = event['total_cost_usd']
+                    
+                    if progress_callback:
+                        await progress_callback("✅ Task completed!")
+            
+            # Start reading the stream
+            await read_stream()
+            
+            # Also collect any stderr
+            stderr_task = asyncio.create_task(process.stderr.read())
+            
+            # Wait for process to complete
+            await process.wait()
+            
+            # Get stderr if any
+            try:
+                stderr_data = await asyncio.wait_for(stderr_task, timeout=1.0)
+                if stderr_data:
+                    stderr_lines = stderr_data.decode('utf-8').split('\n')
+            except asyncio.TimeoutError:
+                pass
+            
+            # Check return code
+            if process.returncode != 0:
+                error_msg = '\n'.join(stderr_lines) if stderr_lines else "Unknown error"
+                logger.error(f"Claude CLI error (return code {process.returncode}): {error_msg}")
+                return f"Error executing Claude CLI (return code {process.returncode}): {error_msg}"
+            
+            # Check if we got any output
+            if not output_lines:
+                logger.warning("Claude CLI returned empty output")
+                return "Claude CLI returned empty output. The command may have completed without generating a response."
+            
+            logger.debug(f"Total output lines: {len(output_lines)}")
+            
+            # Note: All processing already happened in real-time during streaming
+            # No need to re-process the lines here
             
             # Log parsing summary
             logger.info(f"Parsing complete - Messages: {len(assistant_messages)}, Tools: {len(tools_used)}, Session: {session_id}")

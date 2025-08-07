@@ -2,7 +2,7 @@
 
 Get a team of specialized AI agents in Claude Code with just 2 commands! Each agent (code reviewer, debugger, test runner, etc.) appears as a separate tool, giving you instant access to focused expertise.
 
-**v2.9.1** - Enhanced resource directory handling with `[resource_dir]` placeholder and `--append-system-prompt`
+**v3.0.0** - Real-time progress streaming! See live updates as agents work with tools
 
 ## 🎯 What You Get
 
@@ -204,6 +204,18 @@ You have access to resources in: [resource_dir]
 - Dynamic resource path resolution - agents are informed of actual paths at runtime
 - Better error reporting when resources are missing
 - Support for hidden directories (e.g., `.bmad-core`)
+
+### Real-Time Progress Streaming (NEW in v3.0.0!)
+
+See live updates as agents work! Progress events stream in real-time:
+- 🚀 Agent initialization
+- 🔧 Tool usage notifications as they happen
+- ✅ Completion status
+
+Works automatically with:
+- **Claude Desktop**: Shows progress indicators
+- **MCP Inspector**: Displays progress bar
+- **Server Logs**: Real-time updates in `/tmp/task_agents_server.log`
 
 ### Session Management (v2.9.0+)
 
