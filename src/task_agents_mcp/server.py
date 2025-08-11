@@ -15,6 +15,7 @@ from fastmcp import FastMCP, Context
 import re
 
 from .agent_manager import AgentManager
+from .resource_manager import AgentResourceManager
 
 # Configure logging
 logging.basicConfig(
@@ -33,8 +34,8 @@ logger.info(f"Current working directory: {os.getcwd()}")
 logger.info(f"TASK_AGENTS_PATH env: {os.environ.get('TASK_AGENTS_PATH', 'NOT SET')}")
 logger.info(f"CLAUDE_EXECUTABLE_PATH env: {os.environ.get('CLAUDE_EXECUTABLE_PATH', 'NOT SET (will auto-detect)')}")
 
-# Initialize FastMCP server
-mcp = FastMCP("task-agent")
+# Initialize FastMCP server with duplicate resource handling
+mcp = FastMCP("task-agent", on_duplicate_resources="replace")
 
 # Look for task-agents directory
 # 1. First check environment variable (for Claude Desktop and other MCP clients)
@@ -68,7 +69,9 @@ agents_info = agent_manager.get_agents_info()
 for name, info in agents_info.items():
     logger.info(f"  - {name}: {info['description']}")
 
-# Enhanced resources and prompts removed - most MCP clients don't support them yet
+# Initialize resource manager and register resources
+resource_manager = AgentResourceManager(mcp, agent_manager)
+resource_manager.register_all_resources()
 
 
 # ============= HELPER FUNCTIONS =============
@@ -272,8 +275,9 @@ for agent_name, agent_config in agent_manager.agents.items():
 
 # Log summary of what's available
 logger.info("\n=== MCP Server Configuration ===")
-logger.info(f"Resources: agents://list (dynamic agent information)")
-# Prompts feature removed - most MCP clients don't support them yet
+logger.info(f"Resources: {len(resource_manager.registered_resources)} registered")
+for resource_uri in resource_manager.registered_resources.keys():
+    logger.info(f"  - {resource_uri}")
 logger.info(f"Tools: {len(registered_tools)} individual agent tools")
 
 # List the registered tools
