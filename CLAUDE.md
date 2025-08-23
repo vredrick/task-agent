@@ -2,37 +2,32 @@
 
 ## 🎯 Quick Context
 
-You're working with a **multi-tool MCP server** where each AI agent is exposed as its own tool. This is NOT the single-tool version (that's a separate repo).
+You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v4.0.0 with simplified architecture - no built-in agents, only user-defined ones.
 
 ### Key Architecture Points
 - Each agent = separate MCP tool (e.g., `analyst`, `dev`, `qa`)
-- No routing/delegate function - direct tool invocation
-- Tool names: lowercase with underscores (e.g., "ux-expert" → `ux_expert`)
+- No built-in agents - users define all agents
+- Ships with `example-agent.md` template
+- Tool names: lowercase with underscores (e.g., "Code Reviewer" → `code_reviewer`)
 - Built on FastMCP with dynamic tool registration
-- BMad methodology agents for complete development workflow
+- Python 3.11+ required
 
 ## 📁 Project Structure
 
 ```
 task-agent/
 ├── src/task_agents_mcp/
-│   ├── __init__.py          # Version: 2.4.2
+│   ├── __init__.py          # Version: 4.0.0
 │   ├── server.py            # Multi-tool MCP server (main entry)
-│   └── agent_manager.py     # Agent loader/executor (unchanged from single-tool)
-├── task-agents/             # Built-in agent configs (BMad agents)
-│   ├── analyst.md           # Business Analyst
-│   ├── pm.md                # Product Manager
-│   ├── ux-expert.md         # UX Designer
-│   ├── architect.md         # Solution Architect
-│   ├── po.md                # Product Owner
-│   ├── sm.md                # Scrum Master
-│   ├── dev.md               # Full Stack Developer
-│   ├── qa.md                # Senior Dev & QA
-│   ├── default-assistant.md # General assistant
-│   └── session-tester.md    # Session testing
+│   ├── agent_manager.py     # Agent loader/executor
+│   ├── resource_manager.py  # MCP resource registration
+│   └── session_store.py     # Session management
+├── task-agents/             # User agent configs (ships with example)
+│   └── example-agent.md     # Template showing agent structure
 ├── pyproject.toml           # Package config (name: task-agents-mcp)
 ├── README.md                # User documentation
-└── CLAUDE.md                # This file
+├── CLAUDE.md                # This file
+└── MANIFEST.in              # Package manifest
 ```
 
 ## 🔧 Key Technical Details
@@ -40,8 +35,9 @@ task-agent/
 ### Package Info
 - **PyPI Name**: `task-agents-mcp`
 - **Command**: `task-agent` (no 's' at end!)
-- **Current Version**: 2.8.0
+- **Current Version**: 4.0.0
 - **Entry Point**: `task_agents_mcp.server:main`
+- **Python Requirement**: 3.11+
 
 ### Tool Registration Flow
 ```python
@@ -55,76 +51,68 @@ for agent_name, agent_config in agent_manager.agents.items():
 ### Environment Variables
 - `TASK_AGENTS_PATH`: Custom agents directory
   - Claude Code: Optional (defaults to `./task-agents`)
-  - Claude Desktop: Required for custom agents
+  - Claude Desktop: Set to your agents directory
 - `CLAUDE_EXECUTABLE_PATH`: Auto-detected from PATH
 
-### Claude CLI Detection (agent_manager.py)
+### Agent Loading
 ```python
-# Searches in order:
-1. Environment variable CLAUDE_EXECUTABLE_PATH
-2. System PATH (using shutil.which)
-3. Common installation paths:
-   - macOS: /usr/local/bin/claude, ~/bin/claude
-   - Linux: /usr/local/bin/claude, ~/.local/bin/claude
-   - Windows: %LOCALAPPDATA%/claude/claude.exe
+# Only loads from one directory now:
+config_dir = os.environ.get('TASK_AGENTS_PATH') or './task-agents'
+agent_manager = AgentManager(config_dir)
+agent_manager.load_agents()
 ```
 
 ## 📝 Common User Tasks
 
-### Installation Issues
+### Installation
 ```bash
-# User reports "spawn task-agent ENOENT"
-# Must use Python 3.10 or higher
-python3.10 -m pip install task-agents-mcp
-# or
+# Must use Python 3.11 or higher
 python3.11 -m pip install task-agents-mcp
 
-# Or from source
-python3.10 -m pip install -e /path/to/task-agent
+# Add to Claude Code
+claude mcp add task-agent task-agent -s project
 ```
 
-### Adding to Claude Code
-```bash
-# Correct syntax (needs both name and command)
-claude mcp add task-agent task-agent -s project
+### Creating Agents
+Users create `.md` files in `task-agents/` directory:
+```markdown
+---
+agent-name: My Agent
+description: What it does
+tools: Read, Grep, Bash
+model: opus
+cwd: .
+optional:
+  resume-session: true 10
+  resource_dirs: ./data
+---
 
-# Creates .mcp.json:
-{
-  "mcpServers": {
-    "task-agent": {
-      "command": "task-agent",
-      "args": [],
-      "env": {}
-    }
-  }
-}
+System-prompt:
+You are...
 ```
 
 ### Testing
 ```bash
-# Quick test with BMad agents
-claude "Use analyst to brainstorm ideas for a todo app"
+# Test with example agent
+claude "Use example_agent to explain how agents work"
 
-# Test the full workflow
-claude "Use pm to create a PRD for a shopping cart feature"
-
-# List all agents
-claude "Show available agents using agents://list"
+# Test custom agent
+claude "Use my_agent to perform task"
 ```
 
 ## 🐛 Known Issues & Fixes
 
-### 1. "spawn task-agent ENOENT"
-- **Cause**: Package not installed or not in PATH
-- **Fix**: Install with Python 3.10+: `python3.10 -m pip install task-agents-mcp`
+### 1. "No agents loaded!"
+- **Cause**: No `.md` files in agents directory
+- **Fix**: Add agent files to `task-agents/` or set `TASK_AGENTS_PATH`
 
-### 2. "missing required argument 'commandOrUrl'"
-- **Cause**: Wrong `claude mcp add` syntax in docs
-- **Fix**: Use `claude mcp add task-agent task-agent -s project`
+### 2. "spawn task-agent ENOENT"
+- **Cause**: Package not installed or wrong Python version
+- **Fix**: Install with Python 3.11: `python3.11 -m pip install task-agents-mcp`
 
-### 3. Custom agents not loading
-- **Claude Code**: Check `task-agents/` exists in project root
-- **Claude Desktop**: Must set `TASK_AGENTS_PATH` env var
+### 3. Agent names with spaces
+- **Note**: "Code Reviewer" becomes tool `code_reviewer`
+- **Resource URI**: "Code-Reviewer://" (spaces become hyphens)
 
 ## 🚀 Development Workflow
 
@@ -133,177 +121,76 @@ claude "Show available agents using agents://list"
 2. Update version in both:
    - `pyproject.toml`
    - `src/task_agents_mcp/__init__.py`
-3. Test locally: `python3.10 -m pip install -e .` (or python3.11)
-4. Test with Claude Code: `claude "Use code_reviewer..."`
+3. Test locally: `python3.11 -m pip install -e .`
+4. Test with Claude Code: `claude "Use example_agent..."`
+
+### Testing Without Installing
+```bash
+# Run directly from source
+python3.11 -c "import sys; sys.path.insert(0, '.'); from src.task_agents_mcp.server import main; main()"
+```
 
 ### Publishing to PyPI
 ```bash
 # Clean previous builds
 rm -rf dist/ build/ *.egg-info
 
-# Build (requires Python 3.10+)
-python3.10 -m build
+# Build (requires Python 3.11+)
+python3.11 -m build
 
 # Upload
-python3.10 -m twine upload dist/*
+python3.11 -m twine upload dist/*
 ```
 
-### Version History Notes
-- 2.9.0: Session reset parameter for agents with resume-session
-- 2.8.0: Dynamic resource path resolution, improved agent initialization
-- 2.7.0: Interactive protocols for all BMad agents
-- 2.6.0: Python 3.10+ requirement, BMad agents
-- 2.5.0: Session resumption support
-- 2.4.2: Fixed `claude mcp add` documentation
-- 2.4.0: Removed CLAUDE_EXECUTABLE_PATH requirement
+## 🎯 Key Changes in v4.0.0
 
-## 🎯 Key Differences from Single-Tool Version
+### What Changed
+- **Removed**: Built-in agents directory (`src/task_agents_mcp/agents/`)
+- **Removed**: Dual-directory loading logic
+- **Added**: Example agent template in `task-agents/`
+- **Simplified**: Only loads from one agents directory
+- **Standardized**: Python 3.11+ requirement
 
-| Aspect | Multi-Tool (This) | Single-Tool |
-|--------|-------------------|-------------|
-| Tools | One per agent | One total |
-| Usage | Direct: `code_reviewer` | Via delegate |
-| Config | No agent param | Needs agent name |
-| Discovery | Immediate in tool list | Via description |
+### Migration from v3.x
+Users upgrading from v3.x need to:
+1. Copy any BMad agents they want from examples
+2. Place them in their `task-agents/` directory
+3. No other changes needed
 
-## 💡 Implementation Tips
+## 💡 Implementation Details
 
-### When Users Want Custom Agents
-1. Tell them to create `task-agents/` in project root
-2. Agent file format:
-   ```markdown
-   ---
-   agent-name: My Agent
-   description: What it does
-   tools: Read, Grep, Bash
-   model: opus
-   cwd: .
-   ---
-   
-   System-prompt:
-   You are...
-   ```
-3. Tool name will be `my_agent` (auto-converted)
+### Agent Discovery
+1. Server checks `TASK_AGENTS_PATH` or defaults to `./task-agents`
+2. Loads all `.md` files with valid YAML frontmatter
+3. Registers each as an MCP tool
+4. Shows helpful messages if no agents found
 
-### Common Customizations Users Ask For
-- New agent types → Add .md file to task-agents/
-- Different models → Change `model:` in agent config
-- Tool restrictions → Modify `tools:` list
-- Working directory → Adjust `cwd:` setting
-- Resource access → Add `resource_dirs:` for additional directories
-
-## 🚨 BMad Agents Overview
-
-The project now includes BMad methodology agents for complete development workflow:
-
-### Agent Workflow Pipeline
-```
-analyst → pm → ux_expert → architect → po → sm → dev → qa
-```
-
-### Key Features
-- **Each agent has specific persona**: Defined roles and responsibilities
-- **Resource directories**: All BMad agents access `./bmad-core` resources
-- **Model optimization**: Strategic agents use opus, tactical use sonnet
-- **Session resumption**: Configured exchanges per agent role
-- **Structured workflow**: Clear handoffs between agents
-
-### Agent Configurations
-| Agent | Model | Exchanges | Purpose |
-|-------|-------|-----------|---------|
-| analyst | opus | 15 | Discovery & research |
-| pm | opus | 15 | Product requirements |
-| ux_expert | opus | 15 | UI/UX design |
-| architect | opus | 15 | Technical design |
-| po | sonnet | 5 | Validation & sharding |
-| sm | sonnet | 5 | Story creation |
-| dev | sonnet | 8 | Implementation |
-| qa | sonnet | 8 | Review & refactoring |
-
-### Resource Directories Feature (Enhanced in v2.8.0)
-Agents can access additional directories via `resource_dirs`:
-```yaml
-optional:
-  resource_dirs: ./.bmad-core  # Hidden directory (with dot prefix)
-  # OR
-  resource_dirs: ./templates, ./data  # Multiple directories
-```
-
-**v2.8.0 Improvements**:
-- Dynamic path resolution - agents informed of actual paths at runtime
-- Automatic `--add-dir` flags for all configured resource directories
-- Better error reporting when resources are missing
-- Support for hidden directories (e.g., `.bmad-core`)
-- Agent system prompts updated to use `[resource_dir]` placeholders
-
-### Session Management Features (v2.9.0)
-
-#### Session Resumption
-Agents can maintain context across multiple exchanges:
-```yaml
-optional:
-  resume-session: true      # 5 exchanges (default)
-  resume-session: true 10   # 10 exchanges  
-  resume-session: false     # Disabled
-```
-
-#### Session Reset Parameter (NEW in v2.9.0)
-For agents with `resume-session: true`, a `session_reset` parameter is available:
-
-**Usage in Claude:**
+### Resource URI Sanitization
+Agent names are sanitized for URI format:
 ```python
-# Normal call - maintains session context
-analyst(prompt="Continue our analysis")
-
-# Reset session - starts fresh
-analyst(prompt="Start new analysis", session_reset=True)
+# "Example Agent" → "Example-Agent://"
+sanitized_name = agent_config.agent_name.replace(' ', '-')
+resource_uri = f"{sanitized_name}://"
 ```
 
-**Key Features:**
-- Only appears for agents with session support
-- Default: `session_reset=False` (maintains session)
-- When `True`: Clears session history before execution
-- Useful when user wants to start fresh with an agent
+### Session Management
+- Sessions stored in `/tmp/task_agents_sessions.json`
+- Each agent can maintain conversation context
+- `session_reset` parameter available for agents with `resume-session: true`
 
-**Example Scenario:**
-```
-User: "Reset the analyst session and start analyzing a new project"
-Claude: [Calls analyst with session_reset=True]
-```
-
-## 🔍 Quick Debugging Commands
-
-```bash
-# Check if installed
-which task-agent
-
-# Check Python version
-python3 --version  # Must be 3.10+
-# If less than 3.10, use python3.10 or python3.11 explicitly
-
-# Test server directly
-task-agent
-
-# Check package version (use Python 3.10+)
-python3.10 -c "import task_agents_mcp; print(task_agents_mcp.__version__)"
-
-# See MCP config
-cat .mcp.json
-```
-
-## ⚠️ Important Reminders
+## 🚨 Important Reminders
 
 1. **Package name vs command**: 
    - Package: `task-agents-mcp` (with 's')
    - Command: `task-agent` (no 's')
 
-2. **Claude Code priority**: This project prioritizes Claude Code CLI over Claude Desktop
+2. **Python version**: Must use Python 3.11+
 
-3. **No CLAUDE_EXECUTABLE_PATH needed**: Auto-detects from v2.4.0+
+3. **Empty default**: Ships with only example template, not functional agents
 
-4. **Project vs global scope**: Recommend project scope for Claude Code (`-s project`)
+4. **Project scope**: Recommend `-s project` for Claude Code
 
-5. **Security**: Claude Code prompts for approval on project-scoped servers
+5. **Agent names**: Spaces become underscores in tool names
 
 ## 📚 Resources
 

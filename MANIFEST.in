@@ -1,3 +1,4 @@
 include README.md
 include LICENSE
-recursive-include src/task_agents_mcp/agents *.md
+include task-agents/.gitkeep
+include task-agents/example-agent.md

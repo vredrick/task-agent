@@ -46,8 +46,10 @@ class AgentResourceManager:
     def _register_agent_resource(self, internal_name: str, agent_config):
         """Register a single resource for an agent using its agent-name."""
         
-        # Use the agent name itself as the URI scheme
-        resource_uri = f"{agent_config.agent_name}://"
+        # Use the agent name itself as the URI scheme (sanitized for URI format)
+        # Replace spaces with hyphens and remove special characters for valid URI
+        sanitized_name = agent_config.agent_name.replace(' ', '-').replace('_', '-')
+        resource_uri = f"{sanitized_name}://"
         
         # Create a unique function name for this agent
         safe_name = internal_name.replace('-', '_')

@@ -48,21 +48,27 @@ if not config_dir:
 # Check if config directory exists
 if not os.path.exists(config_dir):
     if os.environ.get('TASK_AGENTS_PATH'):
-        logger.error(f"Config directory not found: {config_dir}")
-        logger.error(f"Check that TASK_AGENTS_PATH points to a valid directory")
+        logger.warning(f"Agents directory not found: {config_dir}")
+        logger.info(f"Check that TASK_AGENTS_PATH points to a valid directory")
     else:
         logger.warning(f"No task-agents directory found at: {config_dir}")
-        logger.info("Server will start with built-in agents only")
-        logger.info("To add custom agents:")
-        logger.info("  - For Claude Code: Create a 'task-agents' directory in your project")
-        logger.info("  - For Claude Desktop: Set TASK_AGENTS_PATH environment variable")
+        logger.info("To add agents:")
+        logger.info("  - For Claude Code: Create .md agent files in './task-agents' directory in your project")
+        logger.info("  - For Claude Desktop: Set TASK_AGENTS_PATH to your agents directory")
 
 # Initialize agent manager and load agents
 agent_manager = AgentManager(config_dir)
 agent_manager.load_agents()
 
-logger.info("Starting task-agents MCP server...")
-logger.info(f"Loaded {len(agent_manager.agents)} agents")
+# Check if any agents were loaded
+if not agent_manager.agents:
+    logger.warning("No agents loaded!")
+    logger.info("The server is running but no agent tools are available.")
+    logger.info("Add .md agent configuration files to your agents directory:")
+    logger.info(f"  Current agents directory: {config_dir}")
+    logger.info("  Example agent format: https://github.com/vredrick/task-agent/tree/main/examples/agents")
+else:
+    logger.info(f"Loaded {len(agent_manager.agents)} agents from {config_dir}")
 
 # Log available agents
 agents_info = agent_manager.get_agents_info()
