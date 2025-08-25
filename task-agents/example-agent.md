@@ -1,15 +1,15 @@
 ---
 # REQUIRED FIELDS
 agent-name: Example Agent
-description: This is an example agent template showing the structure of agent configuration files
+description: UPDATED - This is an example agent template showing the structure of agent configuration files
 tools: Read, Write, Edit, Glob, Grep, Bash
-model: sonnet
+model: haiku
 cwd: .
 
 # OPTIONAL FIELDS
 optional:
   # Enable session resumption with max exchanges (true = 5, or specify number)
-  resume-session: false
+  resume-session: true
   
   # Additional directories the agent can access (comma-separated)
   # resource_dirs: ./docs, ./data

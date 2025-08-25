@@ -33,7 +33,7 @@ Repository = "https://github.com/vredrick/task-agent.git"
 Issues = "https://github.com/vredrick/task-agent/issues"
 
 [project.scripts]
-task-agent = "task_agents_mcp.server:main"
+task-agent = "task_agents_mcp.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
