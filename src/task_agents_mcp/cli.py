@@ -184,8 +184,9 @@ Examples:
         try:
             # Try to use the new agent-cli module
             import os
-            current_dir = Path(__file__).parent.parent.parent
-            sys.path.insert(0, str(current_dir))
+            project_root = Path(__file__).parent.parent.parent
+            agent_cli_dir = project_root / "agent-cli"
+            sys.path.insert(0, str(agent_cli_dir))
             
             from agent_cli.alias_generator import AliasGenerator
             from .agent_manager import AgentManager
@@ -234,10 +235,9 @@ Examples:
                 sys.exit(1)
                 
         except ImportError:
-            print("⚠️  Agent-cli module not found, using legacy implementation...")
-            from .alias_generator import generate_aliases_command
-            success = generate_aliases_command(args.output_dir, args.agents_dir)
-            sys.exit(0 if success else 1)
+            print("❌ Agent-cli module not found. Please ensure agent-cli directory is present.")
+            print("The agent-cli module is required for alias generation.")
+            sys.exit(1)
         except Exception as e:
             print(f"❌ Error: {e}")
             sys.exit(1)

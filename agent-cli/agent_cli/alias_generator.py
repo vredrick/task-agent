@@ -96,13 +96,97 @@ CONFIG_DIR="{configs_dir}"
 AGENT_FILE="{agent_file_path}"
 CLAUDE_CLI="{claude_path}"
 
-# Check if query was provided
+# Check if query was provided - if not, start REPL mode
 if [ $# -eq 0 ]; then
-    echo "Usage: {script_name} \\"your query here\\""
-    echo ""
-    echo "This is a dynamic agent alias that loads configuration from:"
-    echo "$AGENT_FILE"
-    exit 1
+    echo "🤖 Starting REPL mode for {agent_name}..."
+    
+    # Parse agent configuration for REPL
+    TEMP_CONFIG=$(mktemp)
+    python3 -c '
+import sys
+import yaml
+import json
+import os
+
+agent_file = "{agent_file_path}"
+temp_config = sys.argv[1]
+
+try:
+    with open(agent_file, "r", encoding="utf-8") as f:
+        content = f.read()
+    
+    if "---" not in content:
+        print("Error: No YAML frontmatter found in agent file", file=sys.stderr)
+        sys.exit(1)
+    
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        print("Error: Invalid YAML frontmatter format", file=sys.stderr)
+        sys.exit(1)
+    
+    # Parse metadata
+    metadata = yaml.safe_load(parts[1])
+    system_prompt = parts[2].strip() if len(parts) > 2 else ""
+    
+    # Extract configuration
+    config = {
+        "agent_name": metadata.get("agent-name", "Unknown Agent"),
+        "description": metadata.get("description", "No description"),
+        "model": metadata.get("model", "sonnet"),
+        "tools": metadata.get("tools", "Read,Write").replace(",", " ").split(),
+        "cwd": metadata.get("cwd", "."),
+        "resume_session": metadata.get("optional", {}).get("resume-session", False)
+    }
+    
+    # Write config to temp file
+    with open(temp_config, "w") as f:
+        json.dump(config, f)
+
+except Exception as e:
+    print(f"Error parsing agent file: {e}", file=sys.stderr)
+    sys.exit(1)
+' "$TEMP_CONFIG"
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to parse agent configuration"
+        rm -f "$TEMP_CONFIG"
+        exit 1
+    fi
+    
+    # Start REPL using Python
+    python3 -c '
+import sys
+import json
+import os
+from pathlib import Path
+
+# Add agent-cli to Python path
+agent_cli_dir = Path("{project_root}/agent-cli/agent_cli")
+if agent_cli_dir.exists():
+    sys.path.insert(0, str(agent_cli_dir.parent))
+
+try:
+    from agent_cli.repl import start_repl
+    
+    # Load agent config
+    with open(sys.argv[1], "r") as f:
+        config = json.load(f)
+    
+    # Start REPL
+    start_repl(config["agent_name"], config)
+    
+except ImportError as e:
+    print(f"❌ REPL module not found: {e}")
+    print("Make sure prompt-toolkit is installed: pip install prompt-toolkit")
+    sys.exit(1)
+except Exception as e:
+    print(f"❌ Error starting REPL: {e}")
+    sys.exit(1)
+' "$TEMP_CONFIG"
+    
+    # Clean up
+    rm -f "$TEMP_CONFIG"
+    exit 0
 fi
 
 # Get the query from command line arguments
@@ -367,12 +451,16 @@ fi
 rm -f "$TEMP_CONFIG" "$TEMP_CONFIG.prompt" "$TEMP_OUTPUT"
 '''
         
+        # Get project root (parent of agent-cli directory)
+        project_root = Path(__file__).parent.parent.parent.resolve()
+        
         # Apply template substitution using string replacement to avoid format() issues
         script_content = script_content.replace('{agent_name}', str(agent_config.agent_name))
         script_content = script_content.replace('{configs_dir}', str(self.agent_manager.configs_dir))
         script_content = script_content.replace('{agent_file_path}', str(agent_file_path))
         script_content = script_content.replace('{claude_path}', str(claude_path))
         script_content = script_content.replace('{script_name}', str(script_name))
+        script_content = script_content.replace('{project_root}', str(project_root))
 
         return script_content, str(script_path)
     
@@ -459,7 +547,7 @@ echo "Installing task-agent aliases..."
 # Copy or symlink scripts
 SCRIPTS=({scripts_list})
 
-for SCRIPT in "${{{{SCRIPTS[@]}}}}"; do
+for SCRIPT in "${{SCRIPTS[@]}}"; do
     SOURCE="$SCRIPT_DIR/$SCRIPT"
     TARGET="$TARGET_DIR/$SCRIPT"
     

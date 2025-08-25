@@ -127,7 +127,15 @@ class SessionChainStore:
             with open(self.storage_path, 'r') as f:
                 data = json.load(f)
                 for agent_name, chain_data in data.items():
-                    self.chains[agent_name] = SessionChain(**chain_data)
+                    # Skip entries that don't have the SessionChain format
+                    # (e.g., REPL conversation history entries)
+                    if isinstance(chain_data, dict) and 'current_session_id' in chain_data:
+                        try:
+                            self.chains[agent_name] = SessionChain(**chain_data)
+                        except TypeError as e:
+                            logger.debug(f"Skipping incompatible session data for {agent_name}: {e}")
+                    else:
+                        logger.debug(f"Skipping non-SessionChain data for {agent_name}")
             logger.info(f"Loaded {len(self.chains)} session chains from {self.storage_path}")
         except Exception as e:
             logger.error(f"Failed to load session chains: {e}")
