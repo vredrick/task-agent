@@ -170,7 +170,7 @@ class AgentManager:
     async def execute_task(self, selected_agent: Dict[str, Any], task_description: str, 
                           session_reset: bool = False,
                           progress_callback: Optional[Callable[[str], Awaitable[None]]] = None) -> str:
-        """Execute a task using the selected agent via Claude Code CLI.
+        """Execute a task using the selected agent via Claude Code CLI or SDK.
         
         Args:
             selected_agent: The agent configuration to use
@@ -182,6 +182,23 @@ class AgentManager:
             The final response from the agent
         """
         agent_config = selected_agent['config']
+        
+        # Check if we should use SDK instead of CLI
+        use_sdk = os.environ.get('USE_SDK', '').lower() in ('true', '1', 'yes')
+        
+        if use_sdk:
+            # Try to use SDK executor
+            try:
+                from .sdk_executor import get_sdk_executor
+                executor = get_sdk_executor()
+                
+                if executor.is_available():
+                    logger.info(f"Using SDK executor for {agent_config.agent_name}")
+                    return await self._execute_task_sdk(selected_agent, task_description, session_reset, progress_callback)
+                else:
+                    logger.warning("SDK executor not available, falling back to CLI")
+            except ImportError as e:
+                logger.warning(f"SDK executor module not found, falling back to CLI: {e}")
         
         # Handle session reset if requested
         if session_reset and agent_config.resume_session:
@@ -515,3 +532,152 @@ class AgentManager:
         except Exception as e:
             logger.error(f"Error executing task: {str(e)}")
             return f"Error executing task: {str(e)}"
+    
+    async def _execute_task_sdk(self, selected_agent: Dict[str, Any], task_description: str,
+                                session_reset: bool = False,
+                                progress_callback: Optional[Callable[[str], Awaitable[None]]] = None) -> str:
+        """Execute a task using the Claude Code SDK instead of CLI subprocess.
+        
+        Args:
+            selected_agent: The agent configuration to use
+            task_description: The task to execute
+            session_reset: Whether to reset the session before executing
+            progress_callback: Optional async callback for progress updates
+        
+        Returns:
+            The final response from the agent
+        """
+        from .sdk_executor import get_sdk_executor
+        
+        agent_config = selected_agent['config']
+        executor = get_sdk_executor()
+        
+        # Handle session reset if requested
+        if session_reset and agent_config.resume_session:
+            logger.info(f"Resetting session for agent: {agent_config.agent_name}")
+            self.session_store.clear_chain(agent_config.agent_name)
+            if progress_callback:
+                await progress_callback(f"🔄 Session reset for {agent_config.agent_name}")
+        
+        # Determine if we should resume a session
+        resume_session_id = None
+        if agent_config.resume_session and not session_reset:
+            # Calculate max exchanges
+            if agent_config.resume_session is True:
+                max_exchanges = 5  # Default when just "true"
+            else:
+                max_exchanges = agent_config.resume_session
+            
+            # Get session to resume
+            resume_session_id = self.session_store.get_resume_session(
+                agent_config.agent_name,
+                max_exchanges
+            )
+        
+        # Send initial progress update
+        if progress_callback:
+            await progress_callback(f"🚀 Starting {agent_config.agent_name} agent (SDK mode)...")
+        
+        # Extract the final assistant message from the stream
+        assistant_messages = []  # Collect all text segments
+        tool_count = 0
+        tools_used = []
+        token_usage = {}
+        session_id = None
+        
+        # Process events from SDK stream
+        async def process_event(event):
+            nonlocal assistant_messages, tool_count, tools_used, token_usage, session_id
+            
+            if event.get('type') == 'text':
+                content = event.get('content', {})
+                if isinstance(content, dict):
+                    text = content.get('text', '')
+                else:
+                    text = str(content)
+                assistant_messages.append(text)
+                
+                # Send progress for streaming text
+                if progress_callback and text.strip():
+                    await progress_callback(f"💬 {text[:100]}...")
+                    
+            elif event.get('type') == 'tool_use':
+                tool_count += 1
+                tool_name = event.get('name', 'unknown')
+                tools_used.append(tool_name)
+                if progress_callback:
+                    await progress_callback(f"🔧 Using tool: {tool_name}")
+                    
+            elif event.get('type') == 'usage':
+                token_usage = event.get('usage', {})
+                
+            elif event.get('claude_version'):
+                # Session info
+                session_id = event.get('conversation_id')
+        
+        try:
+            # Execute via SDK
+            output_lines = []
+            async for line in executor.execute_task(
+                agent_config,
+                task_description,
+                session_id=resume_session_id,
+                progress_callback=None  # We handle progress ourselves
+            ):
+                output_lines.append(line)
+                
+                # Process each line as JSON event
+                try:
+                    event = json.loads(line)
+                    await process_event(event)
+                except json.JSONDecodeError:
+                    logger.debug(f"Non-JSON line from SDK: {line[:100]}")
+            
+            # Update session chain if we got a new session ID
+            if session_id and agent_config.resume_session:
+                was_resume = resume_session_id is not None
+                self.session_store.update_chain(agent_config.agent_name, session_id, was_resume)
+                logger.info(f"Session chain updated for {agent_config.agent_name}: {session_id}")
+            
+            # Combine assistant messages
+            formatted_response = ''.join(assistant_messages).strip()
+            
+            # If no content was extracted, return the raw output
+            if not formatted_response:
+                formatted_response = '\n'.join(output_lines)
+            
+            # Add metadata footer
+            formatted_response += "\n\n---\n"
+            formatted_response += f"Agent: {agent_config.agent_name} (SDK mode)\n"
+            formatted_response += f"Model: {agent_config.model}\n"
+            
+            if tool_count > 0:
+                formatted_response += f"Tools used: {tool_count} ({', '.join(tools_used)})\n"
+            
+            if session_id:
+                formatted_response += f"Session: {session_id}\n"
+                
+                # Add session chain info
+                if agent_config.resume_session:
+                    chain_info = self.session_store.get_chain_info(agent_config.agent_name)
+                    if chain_info:
+                        formatted_response += f"Exchange: {chain_info['exchange_count']}"
+                        if agent_config.resume_session is True:
+                            formatted_response += "/5"
+                        else:
+                            formatted_response += f"/{agent_config.resume_session}"
+                        formatted_response += "\n"
+            
+            # Add token usage if available
+            if token_usage:
+                input_tokens = token_usage.get('input_tokens', 0)
+                output_tokens = token_usage.get('output_tokens', 0)
+                total_tokens = input_tokens + output_tokens
+                
+                formatted_response += f"\nTokens: {total_tokens:,} ({input_tokens:,} in, {output_tokens:,} out)"
+            
+            return formatted_response
+            
+        except Exception as e:
+            logger.error(f"Error executing task with SDK: {str(e)}")
+            return f"Error executing task with SDK: {str(e)}"
