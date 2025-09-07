@@ -68,8 +68,8 @@ class SDKExecutor:
             raise RuntimeError("Claude Code SDK is not installed. Please install claude-code-sdk or claude-max.")
         
         # IMPORTANT: Don't set ANTHROPIC_API_KEY to use subscription OAuth
-        # SDK will automatically use ~/.claude/credentials.json
-        if 'ANTHROPIC_API_KEY' in os.environ and self.has_claude_max:
+        # SDK will automatically use ~/.claude/.credentials.json (note the dot!)
+        if 'ANTHROPIC_API_KEY' in os.environ:
             logger.info("Removing ANTHROPIC_API_KEY to force OAuth subscription authentication")
             del os.environ['ANTHROPIC_API_KEY']  # Force OAuth fallback
         

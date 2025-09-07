@@ -25,7 +25,7 @@ export USE_SDK=true
 #### Option 1: Claude Subscription (Recommended)
 ```bash
 # Don't set ANTHROPIC_API_KEY
-# SDK will use ~/.claude/credentials.json automatically
+# SDK will use ~/.claude/.credentials.json automatically
 export USE_SDK=true
 ```
 
@@ -123,8 +123,9 @@ volumes:
 - Check: `python3 -c "import claude_code_sdk"`
 
 ### "OAuth authentication failed"
-- Ensure `~/.claude/credentials.json` exists
+- Ensure `~/.claude/.credentials.json` exists (note the dot!)
 - Don't set `ANTHROPIC_API_KEY` when using subscription
+- Run `claude login` if credentials are missing
 
 ### "Unexpected keyword argument"
 - SDK API differs from CLI

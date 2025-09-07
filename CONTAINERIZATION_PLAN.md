@@ -137,7 +137,7 @@ The SDK can authenticate using your Claude subscription (Pro/Max) instead of API
 #### Key Insights
 1. **Authentication Precedence**: API Key > OAuth > Subscription
 2. **Force OAuth**: Remove `ANTHROPIC_API_KEY` to use subscription
-3. **Credentials Location**: OAuth tokens stored in `~/.claude/credentials.json`
+3. **Credentials Location**: OAuth tokens stored in `~/.claude/.credentials.json`
 4. **Context Window**: API keys provide 1M tokens vs 200K for subscriptions
 
 #### Implementation Options
@@ -151,7 +151,7 @@ pip install claude-max  # Arthur Colle's package
 **Option 2: Standard SDK with OAuth Fallback**
 ```python
 # Don't set ANTHROPIC_API_KEY
-# SDK will use ~/.claude/credentials.json automatically
+# SDK will use ~/.claude/.credentials.json automatically
 ```
 
 **Option 3: Container Credential Mounting**
