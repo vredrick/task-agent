@@ -11,19 +11,12 @@ try:
 except ImportError:
     HAS_CLAUDE_MAX = False
     try:
-        from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
-        from claude_code_sdk.types import (
-            AssistantMessage, 
-            UserMessage, 
-            SystemMessage, 
-            ResultMessage,
-            TextBlock,
-            ToolUseBlock
-        )
+        from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions, query
     except ImportError:
         # Fallback if SDK not available
         ClaudeSDKClient = None
         ClaudeCodeOptions = None
+        query = None
 
 import asyncio
 import json
@@ -55,10 +48,15 @@ class SDKExecutor:
     ) -> AsyncGenerator[str, None]:
         """Execute agent task using SDK instead of CLI subprocess.
         
+        NOTE: Session resumption in SDK works differently than CLI:
+        - CLI uses -r flag with session IDs from SessionChainStore
+        - SDK uses 'resume' parameter with conversation IDs
+        - These are separate systems and should not be mixed
+        
         Args:
             agent_config: Agent configuration object with system_prompt, tools, model, etc.
             task_description: The task/query to execute
-            session_id: Optional session ID for conversation continuity
+            session_id: Optional SDK conversation ID (NOT CLI session ID)
             progress_callback: Optional callback for progress updates
             
         Yields:
@@ -86,38 +84,39 @@ class SDKExecutor:
                 # For now, we'll fall back to standard SDK behavior
                 raise NotImplementedError("claude-max integration not yet fully implemented")
             else:
-                logger.info("Using standard Claude Code SDK")
-                # Create SDK options
+                logger.info(f"Using standard Claude Code SDK (session_id={session_id})")
+                # Create SDK options matching documentation patterns
+                # NOTE: SDK session management is separate from CLI sessions
+                # - session_id here should be an SDK conversation_id from a previous SDK call
+                # - This is NOT compatible with CLI session IDs from SessionChainStore
+                # - If integrating SDK sessions, create a separate SDKSessionStore
                 options = ClaudeCodeOptions(
                     system_prompt=agent_config.system_prompt if hasattr(agent_config, 'system_prompt') else None,
                     allowed_tools=agent_config.tools if hasattr(agent_config, 'tools') else [],
-                    model=agent_config.model if hasattr(agent_config, 'model') else 'haiku',
+                    model=agent_config.model if hasattr(agent_config, 'model') else 'claude-3-5-sonnet-20241022',
                     cwd=working_dir,
-                    resume=session_id,  # Use 'resume' for session continuation
+                    resume=session_id,  # SDK conversation ID (not CLI session ID)
+                    max_turns=getattr(agent_config, 'max_exchanges', 5) if hasattr(agent_config, 'max_exchanges') else 5
                 )
                 
-                # Create client
-                client = ClaudeSDKClient(options=options)
-                
-                # Connect to Claude
-                await client.connect()
-                
-                try:
+                # Use async context manager pattern as shown in docs
+                async with ClaudeSDKClient(options=options) as client:
                     # Send the query
                     await client.query(task_description)
                     
                     # Receive and convert responses to JSON format
                     conversation_id = None
+                    session_id_output = None
                     total_cost = 0.0
                     input_tokens = 0
                     output_tokens = 0
                     
                     async for msg in client.receive_response():
-                        if isinstance(msg, AssistantMessage):
-                            # Process assistant message content
+                        if hasattr(msg, 'content'):
+                            # Process message content blocks
                             for block in msg.content:
-                                if isinstance(block, TextBlock):
-                                    # Convert to stream-json format
+                                if hasattr(block, 'text'):
+                                    # Text block - convert to stream-json format
                                     json_event = {
                                         "type": "text",
                                         "content": {
@@ -126,7 +125,7 @@ class SDKExecutor:
                                     }
                                     yield json.dumps(json_event)
                                     
-                                elif hasattr(block, '__class__') and 'ToolUse' in block.__class__.__name__:
+                                elif hasattr(block, 'type') and block.type == 'tool_use':
                                     # Tool use block
                                     json_event = {
                                         "type": "tool_use",
@@ -135,22 +134,30 @@ class SDKExecutor:
                                     }
                                     yield json.dumps(json_event)
                         
-                        elif isinstance(msg, ResultMessage):
+                        # Check for ResultMessage using type name (more robust)
+                        if type(msg).__name__ == "ResultMessage":
                             # Extract session info and usage
-                            conversation_id = getattr(msg, 'conversation_id', None)
+                            session_id_output = getattr(msg, 'session_id', None)
+                            conversation_id = getattr(msg, 'conversation_id', session_id_output)
                             total_cost = getattr(msg, 'total_cost_usd', 0.0)
+                            logger.info(f"SDK ResultMessage - session_id: {session_id_output}, conversation_id: {conversation_id}")
                             
-                            # Try to get token usage
+                            # Try to get token usage from result
                             if hasattr(msg, 'usage'):
                                 usage = msg.usage
                                 input_tokens = getattr(usage, 'input_tokens', 0)
                                 output_tokens = getattr(usage, 'output_tokens', 0)
+                            elif hasattr(msg, 'input_tokens'):
+                                input_tokens = getattr(msg, 'input_tokens', 0)
+                                output_tokens = getattr(msg, 'output_tokens', 0)
                             
-                            # Send session info event
-                            if conversation_id:
+                            # Send session info event (important for resumption)
+                            if session_id_output or conversation_id:
                                 json_event = {
+                                    "type": "session_info",  # Add type field
                                     "claude_version": "SDK",
-                                    "conversation_id": conversation_id
+                                    "conversation_id": session_id_output or conversation_id,
+                                    "session_id": session_id_output  # Include both for compatibility
                                 }
                                 yield json.dumps(json_event)
                             
@@ -168,18 +175,6 @@ class SDKExecutor:
                             
                             # Result message indicates completion
                             break
-                        
-                        elif isinstance(msg, UserMessage):
-                            # User message (shouldn't happen in response)
-                            logger.debug(f"Unexpected UserMessage in response: {msg}")
-                        
-                        elif isinstance(msg, SystemMessage):
-                            # System message
-                            logger.debug(f"System message: {msg}")
-                            
-                finally:
-                    # Disconnect from Claude
-                    await client.disconnect()
                     
         except Exception as e:
             logger.error(f"SDK execution failed: {e}")

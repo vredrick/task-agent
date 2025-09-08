@@ -1,204 +1,295 @@
-"""
-Agent Manager for Task-Agents MCP Server
+"""Agent Manager module for Task Agents MCP server.
 
-Handles agent discovery, selection, and task execution via Claude Code CLI.
+This module handles loading, managing, and executing AI agents defined
+in Markdown files with YAML frontmatter.
 """
 
 import os
 import re
-import yaml
-import logging
 import subprocess
-import asyncio
+import yaml
 import json
+import logging
+import time
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable, Awaitable, Union
-from dataclasses import dataclass
-
-from .session_store import SessionChainStore
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Any, AsyncGenerator
+from .session_store import SessionChainStore as SessionStore
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class AgentConfig:
-    """Configuration for a single agent."""
-    name: str  # File name (for internal use)
-    agent_name: str  # Display name for the agent
+    """Configuration for an AI agent."""
+    agent_name: str
     description: str
     tools: List[str]
     model: str
     cwd: str
     system_prompt: str
-    resume_session: Union[bool, int] = False  # False, True (5 default), or specific number
-    resource_dirs: List[str] = None  # Optional additional directories to add via --add-dir
+    resume_session: Any = False  # Can be bool or int (max exchanges)
+    resource_dirs: Optional[List[str]] = None
+    file_path: Optional[str] = None
+    max_exchanges: int = field(init=False)
     
+    def __post_init__(self):
+        """Calculate max_exchanges from resume_session value."""
+        if isinstance(self.resume_session, bool):
+            self.max_exchanges = 5 if self.resume_session else 0
+        elif isinstance(self.resume_session, int):
+            self.max_exchanges = self.resume_session
+            self.resume_session = True  # Enable if number provided
+        else:
+            self.max_exchanges = 0
+            self.resume_session = False
+
 
 class AgentManager:
-    """Manages agent configurations and task delegation."""
+    """Manages AI agents and their execution."""
     
-    def __init__(self, configs_dir: str = "configs"):
-        self.configs_dir = Path(configs_dir)
-        self.agents: Dict[str, AgentConfig] = {}
-        
-        # Initialize session store with persistent storage
-        session_store_path = Path("/tmp/task_agents_sessions.json")
-        self.session_store = SessionChainStore(session_store_path)
-        
-    def load_agents(self) -> None:
-        """Load all agent configurations from the configs directory."""
-        if not self.configs_dir.exists():
-            logger.warning(f"Configs directory not found: {self.configs_dir}")
-            return
-            
-        for config_file in self.configs_dir.glob("*.md"):
-            try:
-                agent = self._parse_agent_config(config_file)
-                if agent:
-                    self.agents[agent.name] = agent
-                    logger.info(f"Loaded agent: {agent.name}")
-            except Exception as e:
-                logger.error(f"Error loading agent config {config_file}: {e}")
-                
-    def _parse_agent_config(self, config_path: Path) -> Optional[AgentConfig]:
-        """Parse a single agent configuration file."""
-        content = config_path.read_text()
-        
-        # Extract YAML frontmatter
-        frontmatter_match = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)$', content, re.DOTALL)
-        if not frontmatter_match:
-            logger.error(f"Invalid config format in {config_path}")
-            return None
-            
-        try:
-            # Parse YAML frontmatter
-            frontmatter = yaml.safe_load(frontmatter_match.group(1))
-            system_prompt_section = frontmatter_match.group(2)
-            
-            # Extract system prompt
-            system_prompt_match = re.search(r'System-prompt:\s*\n(.*)$', system_prompt_section, re.DOTALL)
-            system_prompt = system_prompt_match.group(1).strip() if system_prompt_match else ""
-            
-            # Validate required fields
-            required_fields = ['agent-name', 'description', 'tools', 'model', 'cwd']
-            for field in required_fields:
-                if field not in frontmatter:
-                    logger.error(f"Missing required field '{field}' in {config_path}")
-                    return None
-            
-            # Parse tools list
-            tools = frontmatter['tools']
-            if isinstance(tools, str):
-                tools = [t.strip() for t in tools.split(',')]
-            
-            # Expand environment variables in cwd
-            cwd = os.path.expandvars(frontmatter.get('cwd', '.'))
-            
-            # Keep cwd as-is for now - it will be resolved during execution
-            # This allows for different behaviors based on the execution context
-            
-            # Parse optional fields
-            resume_session = False
-            resource_dirs = None
-            
-            if 'optional' in frontmatter and isinstance(frontmatter['optional'], dict):
-                optional = frontmatter['optional']
-                
-                # Parse resume-session
-                resume_val = optional.get('resume-session', False)
-                if isinstance(resume_val, bool):
-                    resume_session = resume_val
-                elif isinstance(resume_val, int) and resume_val > 0:
-                    resume_session = resume_val
-                elif isinstance(resume_val, str):
-                    # Parse string format like "true", "false", "true 5", or just "5"
-                    parts = resume_val.strip().split()
-                    if parts[0].lower() == 'true':
-                        # "true" or "true 5"
-                        resume_session = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 5
-                    elif parts[0].lower() == 'false':
-                        resume_session = False
-                    elif parts[0].isdigit():
-                        # Just a number like "5"
-                        resume_session = int(parts[0])
-                
-                # Parse resource_dirs (similar to tools parsing)
-                resource_dirs_val = optional.get('resource_dirs')
-                if resource_dirs_val:
-                    if isinstance(resource_dirs_val, str):
-                        # Parse comma-separated string like tools
-                        resource_dirs = [d.strip() for d in resource_dirs_val.split(',')]
-                    elif isinstance(resource_dirs_val, list):
-                        # Already a list
-                        resource_dirs = resource_dirs_val
-            
-            return AgentConfig(
-                name=config_path.stem,
-                agent_name=frontmatter['agent-name'],
-                description=frontmatter['description'],
-                tools=tools,
-                model=frontmatter['model'],
-                cwd=cwd,
-                system_prompt=system_prompt,
-                resume_session=resume_session,
-                resource_dirs=resource_dirs
-            )
-            
-        except yaml.YAMLError as e:
-            logger.error(f"YAML parsing error in {config_path}: {e}")
-            return None
-            
-        
-    def get_agent_by_display_name(self, display_name: str) -> Optional[AgentConfig]:
-        """Get agent by its display name (agent-name field)."""
-        for agent in self.agents.values():
-            if agent.agent_name == display_name:
-                return agent
-        return None
-        
-    def get_agents_info(self) -> Dict[str, Dict[str, Any]]:
-        """Get information about all available agents."""
-        return {
-            agent.agent_name: {
-                'description': agent.description,
-                'model': agent.model,
-                'internal_name': name
-            }
-            for name, agent in self.agents.items()
-        }
-        
-    async def execute_task(self, selected_agent: Dict[str, Any], task_description: str, 
-                          session_reset: bool = False,
-                          progress_callback: Optional[Callable[[str], Awaitable[None]]] = None) -> str:
-        """Execute a task using the selected agent via Claude Code CLI or SDK.
+    def __init__(self, config_dir: str = "./task-agents"):
+        """Initialize the agent manager.
         
         Args:
-            selected_agent: The agent configuration to use
-            task_description: The task to execute
-            session_reset: Whether to reset the session before executing (default: False)
-            progress_callback: Optional async callback for progress updates
-        
-        Returns:
-            The final response from the agent
+            config_dir: Directory containing agent configuration files
         """
-        agent_config = selected_agent['config']
+        self.config_dir = config_dir
+        self.agents: Dict[str, AgentConfig] = {}
+        self.session_store = SessionStore()
         
-        # Check if we should use SDK instead of CLI
-        use_sdk = os.environ.get('USE_SDK', '').lower() in ('true', '1', 'yes')
+    def load_agents(self) -> None:
+        """Load all agent configurations from the config directory."""
+        if not os.path.exists(self.config_dir):
+            logger.warning(f"Agent config directory {self.config_dir} does not exist")
+            return
+            
+        for filename in os.listdir(self.config_dir):
+            if filename.endswith('.md'):
+                filepath = os.path.join(self.config_dir, filename)
+                try:
+                    config = self._load_agent_config(filepath)
+                    if config:
+                        # Use filename without extension as agent key
+                        agent_key = filename[:-3]  # Remove .md extension
+                        self.agents[agent_key] = config
+                        logger.info(f"Loaded agent: {agent_key}")
+                except Exception as e:
+                    logger.error(f"Failed to load agent from {filepath}: {e}")
+    
+    def _load_agent_config(self, filepath: str) -> Optional[AgentConfig]:
+        """Load an agent configuration from a Markdown file.
         
-        if use_sdk:
-            # Try to use SDK executor
-            try:
-                from .sdk_executor import get_sdk_executor
-                executor = get_sdk_executor()
-                
-                if executor.is_available():
-                    logger.info(f"Using SDK executor for {agent_config.agent_name}")
-                    return await self._execute_task_sdk(selected_agent, task_description, session_reset, progress_callback)
+        Args:
+            filepath: Path to the agent configuration file
+            
+        Returns:
+            AgentConfig object or None if loading fails
+        """
+        try:
+            with open(filepath, 'r') as f:
+                content = f.read()
+            
+            # Extract YAML frontmatter
+            match = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+            if not match:
+                logger.warning(f"No YAML frontmatter found in {filepath}")
+                return None
+            
+            yaml_content = match.group(1)
+            markdown_content = match.group(2)
+            
+            # Parse YAML
+            config_data = yaml.safe_load(yaml_content)
+            
+            # Extract system prompt (everything after "System-prompt:")
+            system_prompt_match = re.search(r'^System-prompt:\s*\n(.*)$', 
+                                           markdown_content, re.MULTILINE | re.DOTALL)
+            system_prompt = system_prompt_match.group(1).strip() if system_prompt_match else ""
+            
+            # Parse tools (comma-separated string to list)
+            tools = [tool.strip() for tool in config_data.get('tools', '').split(',')]
+            
+            # Handle optional fields
+            optional_config = config_data.get('optional', {})
+            
+            # Parse resume-session field (can be: false, true, "true 5", or just a number)
+            resume_session_value = optional_config.get('resume-session', False)
+            if isinstance(resume_session_value, str):
+                parts = resume_session_value.split()
+                if parts[0].lower() == 'true':
+                    if len(parts) > 1:
+                        resume_session = int(parts[1])
+                    else:
+                        resume_session = True
+                elif parts[0].lower() == 'false':
+                    resume_session = False
                 else:
-                    logger.warning("SDK executor not available, falling back to CLI")
-            except ImportError as e:
-                logger.warning(f"SDK executor module not found, falling back to CLI: {e}")
+                    # Try to parse as number
+                    try:
+                        resume_session = int(parts[0])
+                    except ValueError:
+                        resume_session = False
+            elif isinstance(resume_session_value, bool):
+                resume_session = resume_session_value
+            elif isinstance(resume_session_value, int):
+                resume_session = resume_session_value
+            else:
+                resume_session = False
+            
+            # Parse resource_dirs (comma-separated string to list)
+            resource_dirs = None
+            if 'resource_dirs' in optional_config:
+                resource_dirs = [
+                    dir.strip() 
+                    for dir in optional_config['resource_dirs'].split(',')
+                ]
+            
+            return AgentConfig(
+                agent_name=config_data.get('agent-name', 'Unnamed Agent'),
+                description=config_data.get('description', ''),
+                tools=tools,
+                model=config_data.get('model', 'haiku'),
+                cwd=config_data.get('cwd', '.'),
+                system_prompt=system_prompt,
+                resume_session=resume_session,
+                resource_dirs=resource_dirs,
+                file_path=filepath
+            )
+            
+        except Exception as e:
+            logger.error(f"Error loading agent config from {filepath}: {e}")
+            return None
+    
+    def get_agent(self, agent_name: str) -> Optional[AgentConfig]:
+        """Get an agent configuration by name.
+        
+        Args:
+            agent_name: Name of the agent
+            
+        Returns:
+            AgentConfig object or None if not found
+        """
+        return self.agents.get(agent_name)
+    
+    async def execute_agent_async(
+        self,
+        agent_config: AgentConfig,
+        prompt: str,
+        session_id: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """Execute an agent asynchronously with streaming output.
+        
+        Args:
+            agent_config: The agent configuration
+            prompt: The task/prompt to execute
+            session_id: Optional session ID for resumption
+            
+        Yields:
+            Streaming output from the agent
+        """
+        # Get claude executable path
+        import shutil
+        claude_path = os.environ.get('CLAUDE_EXECUTABLE_PATH') or shutil.which('claude')
+        
+        if not claude_path:
+            yield json.dumps({
+                "type": "error",
+                "content": {"text": "Claude CLI not found. Please install Claude Code CLI."}
+            })
+            return
+        
+        # Build command
+        cmd = [claude_path]
+        
+        # Add model flag
+        if agent_config.model:
+            cmd.extend(['-m', agent_config.model])
+        
+        # Add tools if specified
+        if agent_config.tools:
+            for tool in agent_config.tools:
+                cmd.extend(['-A', tool])
+        
+        # Add working directory
+        if agent_config.cwd and agent_config.cwd != '.':
+            cmd.extend(['--cwd', agent_config.cwd])
+        
+        # Add session resumption if provided
+        if session_id:
+            cmd.extend(['-r', session_id])
+        
+        # Add stream-json flag for structured output
+        cmd.append('--stream-json')
+        
+        # Prepare the input (system prompt + user prompt)
+        full_prompt = f"{agent_config.system_prompt}\n\nUser: {prompt}" if agent_config.system_prompt else prompt
+        
+        try:
+            # Create subprocess
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # Send prompt to stdin
+            process.stdin.write(full_prompt.encode('utf-8'))
+            await process.stdin.drain()
+            process.stdin.close()
+            
+            # Stream output
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                    
+                output = line.decode('utf-8').strip()
+                if output:
+                    yield output
+            
+            # Wait for process to complete
+            await process.wait()
+            
+            # Check for errors
+            if process.returncode != 0:
+                stderr = await process.stderr.read()
+                error_msg = stderr.decode('utf-8').strip()
+                if error_msg:
+                    yield json.dumps({
+                        "type": "error",
+                        "content": {"text": f"Agent error: {error_msg}"}
+                    })
+                    
+        except Exception as e:
+            logger.error(f"Error executing agent: {e}")
+            yield json.dumps({
+                "type": "error",
+                "content": {"text": f"Execution error: {str(e)}"}
+            })
+    
+    async def execute_agent(
+        self,
+        agent_config: AgentConfig,
+        task_description: str,
+        session_reset: bool = False,
+        progress_callback: Optional[callable] = None
+    ) -> str:
+        """Execute an agent with a given task.
+        
+        Args:
+            agent_config: The agent configuration to execute
+            task_description: The task/query for the agent
+            session_reset: Whether to reset the session chain
+            progress_callback: Optional async callback for progress updates
+            
+        Returns:
+            The agent's response as a string
+        """
+        # Check if SDK executor is available (it's not in our case)
+        # Fallback to CLI execution
         
         # Handle session reset if requested
         if session_reset and agent_config.resume_session:
@@ -247,437 +338,107 @@ class AgentManager:
             if not claude_path:
                 return "Error: Claude Code CLI not found. Please install Claude Code CLI from https://claude.ai/download or set CLAUDE_EXECUTABLE_PATH environment variable."
         
-        # Start building the command
-        cmd = [
-            claude_path,
-            '-p', task_description,
-            '--output-format', 'stream-json',
-            '--verbose',  # Required for stream-json output
-            '--allowedTools', *agent_config.tools,  # Unpack list for space-separated tools
-            '--model', agent_config.model
-        ]
+        # Build the command
+        cmd = [claude_path]
         
-        # Add resume flag if we have a session to resume
+        # Add model flag
+        if agent_config.model:
+            cmd.extend(['-m', agent_config.model])
+        
+        # Add tools if specified
+        if agent_config.tools:
+            for tool in agent_config.tools:
+                cmd.extend(['-A', tool])
+        
+        # Add working directory
+        if agent_config.cwd and agent_config.cwd != '.':
+            cmd.extend(['--cwd', agent_config.cwd])
+        
+        # Add session resumption if we have a session to resume
         if resume_session_id:
             cmd.extend(['-r', resume_session_id])
-            logger.info(f"Resuming session {resume_session_id} for {agent_config.agent_name}")
+            
+            # Get session info for exchange count
+            session_info = self.session_store.get_session_info(agent_config.agent_name)
+            exchange_count = session_info.get('exchange_count', 0) if session_info else 0
+            max_exchanges = agent_config.max_exchanges or 5
+            
+            if progress_callback:
+                await progress_callback(f"📊 Resuming session (Exchange {exchange_count + 1}/{max_exchanges})")
+            
+            logger.info(f"Resuming session {resume_session_id} for {agent_config.agent_name} (exchange {exchange_count + 1}/{max_exchanges})")
+        else:
+            if progress_callback:
+                await progress_callback("🚀 Starting new session")
+        
+        # Prepare the full prompt
+        full_prompt = agent_config.system_prompt + "\n\n" + task_description
+        
+        if progress_callback:
+            await progress_callback(f"🤖 Executing {agent_config.agent_name} with {agent_config.model} model")
         
         try:
-            # Resolve the working directory from agent config
-            cwd = agent_config.cwd
-            
-            
-            # If cwd is '.', use the parent directory of the task-agents folder
-            if cwd == '.':
-                # The task-agents folder is always at configs_dir
-                # We want to go to the parent directory of the task-agents folder
-                task_agents_dir = Path(self.configs_dir).resolve()
-                # Always go up one level from the task-agents directory
-                cwd = str(task_agents_dir.parent)
-                logger.info(f"Agent cwd was '.', resolved to: {cwd}")
-            
-            # Expand environment variables and make absolute
-            working_dir = os.path.abspath(os.path.expandvars(cwd))
-            
-            # Add any resource directories specified in agent config
-            resolved_resource_dirs = []
-            accessible_resource_dirs = []
-            missing_resource_dirs = []
-            
-            if agent_config.resource_dirs:
-                for resource_dir in agent_config.resource_dirs:
-                    # Resolve resource_dir relative to the working directory
-                    if not os.path.isabs(resource_dir):
-                        # Relative path - resolve from working directory
-                        resolved_dir = os.path.abspath(os.path.join(working_dir, resource_dir))
-                    else:
-                        # Absolute path - use as-is  
-                        resolved_dir = os.path.abspath(os.path.expandvars(resource_dir))
-                    
-                    resolved_resource_dirs.append((resource_dir, resolved_dir))
-                    
-                    # Check if directory exists before adding
-                    if os.path.exists(resolved_dir) and os.path.isdir(resolved_dir):
-                        cmd.extend(['--add-dir', resolved_dir])
-                        logger.info(f"Added resource directory: {resolved_dir}")
-                        accessible_resource_dirs.append(resolved_dir)
-                    else:
-                        logger.warning(f"Resource directory not found or not a directory: {resolved_dir}")
-                        missing_resource_dirs.append((resource_dir, resolved_dir))
-            
-            # Build dynamic resource directory instruction
-            resource_info = []
-            if accessible_resource_dirs:
-                resource_info.append(f"ACCESSIBLE RESOURCES: {', '.join(accessible_resource_dirs)}")
-            if missing_resource_dirs:
-                missing_list = [f"{orig} (looked at: {resolved})" for orig, resolved in missing_resource_dirs]
-                resource_info.append(f"MISSING RESOURCES: {', '.join(missing_list)}")
-            
-            # Replace [resource_dir] placeholders in system prompt with actual paths
-            system_prompt_with_replacements = agent_config.system_prompt
-            if accessible_resource_dirs:
-                # If we have one resource dir, replace with that path
-                # If we have multiple, replace with a comma-separated list
-                if len(accessible_resource_dirs) == 1:
-                    system_prompt_with_replacements = system_prompt_with_replacements.replace('[resource_dir]', accessible_resource_dirs[0])
-                else:
-                    resource_dirs_str = ', '.join(accessible_resource_dirs)
-                    system_prompt_with_replacements = system_prompt_with_replacements.replace('[resource_dir]', resource_dirs_str)
-            
-            # Add the system prompt with replacements
-            cmd.extend(['--system-prompt', system_prompt_with_replacements])
-            
-            # Build append-system-prompt instruction for working directory and resources
-            append_prompt_parts = []
-            append_prompt_parts.append(f"WORKING DIRECTORY CONTEXT: You are currently operating from the directory: {working_dir}")
-            if resource_info:
-                append_prompt_parts.extend(resource_info)
-            
-            # Add append-system-prompt flag
-            append_prompt = '\n'.join(append_prompt_parts)
-            cmd.extend(['--append-system-prompt', append_prompt])
-            
-            # Log the full command for debugging
-            logger.info(f"Agent config cwd: {agent_config.cwd}")
-            logger.info(f"Resolved cwd: {cwd}")
-            logger.info(f"Final working directory: {working_dir}")
-            logger.info(f"Appending working directory instruction to system prompt")
-            logger.info(f"Executing command: {' '.join(cmd)}")
-            logger.info(f"Using model: {agent_config.model}")
-            
-            # Verify the working directory exists
-            if not os.path.exists(working_dir):
-                logger.error(f"Working directory does not exist: {working_dir}")
-                return f"Error: Working directory does not exist: {working_dir}"
-            
-            # Run the command asynchronously with a timeout
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=working_dir,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.DEVNULL  # Ensure no interactive input is expected
+            # Execute the command with the prompt piped to stdin
+            # Set timeout to 2 minutes (120 seconds)
+            result = subprocess.run(
+                cmd,
+                input=full_prompt,
+                capture_output=True,
+                text=True,
+                timeout=120
             )
             
-            # Send initial progress update
-            if progress_callback:
-                await progress_callback(f"🚀 Starting {agent_config.agent_name} agent...")
+            if result.returncode != 0:
+                error_msg = f"Error executing agent: {result.stderr}"
+                logger.error(error_msg)
+                return error_msg
             
-            # Stream output line by line for real-time progress
-            output_lines = []
-            stderr_lines = []
+            response = result.stdout
             
-            # Extract the final assistant message from the stream
-            assistant_messages = []  # Collect all text segments
-            
-            # Track progress events and usage
-            tool_count = 0
-            tools_used = []
-            token_usage = {}
-            total_cost = None
-            session_id = None
-            
-            # Read stdout line by line for real-time streaming
-            async def read_stream():
-                while True:
-                    line = await process.stdout.readline()
-                    if not line:
-                        break
+            # Extract session ID from response if available
+            # Look for pattern like "Session: <session-id>"
+            import re
+            session_match = re.search(r'Session:\s+([a-zA-Z0-9-]+)', response)
+            if session_match:
+                new_session_id = session_match.group(1)
+                
+                # Update session store if this is a resumable agent
+                if agent_config.resume_session:
+                    if was_resume:
+                        # Continue the chain
+                        self.session_store.add_to_chain(agent_config.agent_name, new_session_id)
+                    else:
+                        # Start a new chain
+                        self.session_store.start_chain(agent_config.agent_name, new_session_id)
                     
-                    line_str = line.decode('utf-8').strip()
-                    if line_str:
-                        output_lines.append(line_str)
-                        
-                        # Process each line as it arrives for real-time progress
-                        try:
-                            event = json.loads(line_str)
-                            await process_event(event)
-                        except json.JSONDecodeError:
-                            logger.debug(f"Non-JSON line: {line_str[:100]}")
-                        except Exception as e:
-                            logger.debug(f"Error processing line: {e}")
-            
-            # Process events as they arrive
-            async def process_event(event):
-                nonlocal tool_count, session_id
-                event_type = event.get('type')
-                
-                # Capture session ID from system init
-                if event_type == 'system' and event.get('subtype') == 'init':
-                    session_id = event.get('session_id')
-                    logger.info(f"Session ID: {session_id}")
-                
-                # Look for tool use events for progress
-                elif event_type == 'assistant' and 'message' in event:
-                    message = event['message']
-                    if message.get('content'):
-                        for content_item in message['content']:
-                            if content_item.get('type') == 'tool_use':
-                                tool_name = content_item.get('name', 'unknown')
-                                tool_count += 1
-                                tools_used.append(tool_name)
-                                if progress_callback:
-                                    await progress_callback(f"🔧 Using tool: {tool_name} (#{tool_count})")
-                            elif content_item.get('type') == 'text' and content_item.get('text'):
-                                assistant_messages.append(content_item['text'])
-                
-                # Check for completion
-                elif event_type == 'result':
-                    if event.get('result'):
-                        result_text = event['result']
-                        if result_text and isinstance(result_text, str):
-                            assistant_messages.clear()
-                            assistant_messages.append(result_text)
-                    
-                    # Extract token usage
-                    if 'usage' in event:
-                        nonlocal token_usage, total_cost
-                        token_usage = event['usage']
-                    if 'total_cost_usd' in event:
-                        total_cost = event['total_cost_usd']
+                    # Get updated session info
+                    session_info = self.session_store.get_session_info(agent_config.agent_name)
+                    exchange_count = session_info.get('exchange_count', 0) if session_info else 0
+                    max_exchanges = agent_config.max_exchanges or 5
                     
                     if progress_callback:
-                        await progress_callback("✅ Task completed!")
+                        await progress_callback(f"✅ Session saved ({exchange_count}/{max_exchanges} exchanges used)")
+                    
+                    logger.info(f"Session {new_session_id} saved for {agent_config.agent_name}")
             
-            # Start reading the stream
-            await read_stream()
+            if progress_callback:
+                await progress_callback("✨ Task completed successfully")
             
-            # Also collect any stderr
-            stderr_task = asyncio.create_task(process.stderr.read())
+            return response
             
-            # Wait for process to complete
-            await process.wait()
-            
-            # Get stderr if any
-            try:
-                stderr_data = await asyncio.wait_for(stderr_task, timeout=1.0)
-                if stderr_data:
-                    stderr_lines = stderr_data.decode('utf-8').split('\n')
-            except asyncio.TimeoutError:
-                pass
-            
-            # Check return code
-            if process.returncode != 0:
-                error_msg = '\n'.join(stderr_lines) if stderr_lines else "Unknown error"
-                logger.error(f"Claude CLI error (return code {process.returncode}): {error_msg}")
-                return f"Error executing Claude CLI (return code {process.returncode}): {error_msg}"
-            
-            # Check if we got any output
-            if not output_lines:
-                logger.warning("Claude CLI returned empty output")
-                return "Claude CLI returned empty output. The command may have completed without generating a response."
-            
-            logger.debug(f"Total output lines: {len(output_lines)}")
-            
-            # Note: All processing already happened in real-time during streaming
-            # No need to re-process the lines here
-            
-            # Log parsing summary
-            logger.info(f"Parsing complete - Messages: {len(assistant_messages)}, Tools: {len(tools_used)}, Session: {session_id}")
-            
-            # Combine all assistant messages
-            final_message = '\n'.join(assistant_messages) if assistant_messages else ""
-            
-            if not final_message:
-                logger.warning("No assistant message found in stream-json output")
-                if progress_callback:
-                    await progress_callback("⚠️ Task completed but no response was generated")
-                return "Task completed but no response message was generated."
-            
-            # Update session store with the NEW session ID
-            if session_id and agent_config.resume_session:
-                self.session_store.update_chain(
-                    agent_config.agent_name,
-                    session_id,
-                    was_resume=was_resume
-                )
-            
-            # Format the response with tool usage first
-            formatted_response = ""
-            
-            # Add session ID and chain info if available
-            if session_id:
-                formatted_response += f"Session: {session_id}\n"
-                
-                # Add session chain info if resume is enabled
-                if agent_config.resume_session:
-                    chain_info = self.session_store.get_chain_info(agent_config.agent_name)
-                    if chain_info:
-                        formatted_response += f"Exchange: {chain_info['exchange_count']}"
-                        if agent_config.resume_session is True:
-                            formatted_response += "/5"
-                        else:
-                            formatted_response += f"/{agent_config.resume_session}"
-                        formatted_response += "\n"
-            
-            # Add tool usage summary if any tools were used
-            if tools_used:
-                formatted_response += f"Tools used: {', '.join(tools_used)}\n\n"
-            
-            # Add the actual message
-            formatted_response += final_message
-            
-            # Add token usage if available
-            if token_usage:
-                input_tokens = token_usage.get('input_tokens', 0)
-                output_tokens = token_usage.get('output_tokens', 0)
-                total_tokens = input_tokens + output_tokens
-                
-                formatted_response += f"\n\nTokens: {total_tokens:,} ({input_tokens:,} in, {output_tokens:,} out)"
-            
-            return formatted_response
-            
-        except FileNotFoundError:
-            return "Error: Claude CLI not found. Please ensure 'claude' is installed and in PATH."
+        except subprocess.TimeoutExpired:
+            error_msg = "Error: Agent execution timed out after 2 minutes"
+            logger.error(error_msg)
+            return error_msg
         except Exception as e:
-            logger.error(f"Error executing task: {str(e)}")
-            return f"Error executing task: {str(e)}"
+            error_msg = f"Error executing agent: {str(e)}"
+            logger.error(error_msg)
+            return error_msg
     
-    async def _execute_task_sdk(self, selected_agent: Dict[str, Any], task_description: str,
-                                session_reset: bool = False,
-                                progress_callback: Optional[Callable[[str], Awaitable[None]]] = None) -> str:
-        """Execute a task using the Claude Code SDK instead of CLI subprocess.
-        
-        Args:
-            selected_agent: The agent configuration to use
-            task_description: The task to execute
-            session_reset: Whether to reset the session before executing
-            progress_callback: Optional async callback for progress updates
+    def list_agents(self) -> List[str]:
+        """List all available agent names.
         
         Returns:
-            The final response from the agent
+            List of agent names
         """
-        from .sdk_executor import get_sdk_executor
-        
-        agent_config = selected_agent['config']
-        executor = get_sdk_executor()
-        
-        # Handle session reset if requested
-        if session_reset and agent_config.resume_session:
-            logger.info(f"Resetting session for agent: {agent_config.agent_name}")
-            self.session_store.clear_chain(agent_config.agent_name)
-            if progress_callback:
-                await progress_callback(f"🔄 Session reset for {agent_config.agent_name}")
-        
-        # Determine if we should resume a session
-        resume_session_id = None
-        if agent_config.resume_session and not session_reset:
-            # Calculate max exchanges
-            if agent_config.resume_session is True:
-                max_exchanges = 5  # Default when just "true"
-            else:
-                max_exchanges = agent_config.resume_session
-            
-            # Get session to resume
-            resume_session_id = self.session_store.get_resume_session(
-                agent_config.agent_name,
-                max_exchanges
-            )
-        
-        # Send initial progress update
-        if progress_callback:
-            await progress_callback(f"🚀 Starting {agent_config.agent_name} agent (SDK mode)...")
-        
-        # Extract the final assistant message from the stream
-        assistant_messages = []  # Collect all text segments
-        tool_count = 0
-        tools_used = []
-        token_usage = {}
-        session_id = None
-        
-        # Process events from SDK stream
-        async def process_event(event):
-            nonlocal assistant_messages, tool_count, tools_used, token_usage, session_id
-            
-            if event.get('type') == 'text':
-                content = event.get('content', {})
-                if isinstance(content, dict):
-                    text = content.get('text', '')
-                else:
-                    text = str(content)
-                assistant_messages.append(text)
-                
-                # Send progress for streaming text
-                if progress_callback and text.strip():
-                    await progress_callback(f"💬 {text[:100]}...")
-                    
-            elif event.get('type') == 'tool_use':
-                tool_count += 1
-                tool_name = event.get('name', 'unknown')
-                tools_used.append(tool_name)
-                if progress_callback:
-                    await progress_callback(f"🔧 Using tool: {tool_name}")
-                    
-            elif event.get('type') == 'usage':
-                token_usage = event.get('usage', {})
-                
-            elif event.get('claude_version'):
-                # Session info
-                session_id = event.get('conversation_id')
-        
-        try:
-            # Execute via SDK
-            output_lines = []
-            async for line in executor.execute_task(
-                agent_config,
-                task_description,
-                session_id=resume_session_id,
-                progress_callback=None  # We handle progress ourselves
-            ):
-                output_lines.append(line)
-                
-                # Process each line as JSON event
-                try:
-                    event = json.loads(line)
-                    await process_event(event)
-                except json.JSONDecodeError:
-                    logger.debug(f"Non-JSON line from SDK: {line[:100]}")
-            
-            # Update session chain if we got a new session ID
-            if session_id and agent_config.resume_session:
-                was_resume = resume_session_id is not None
-                self.session_store.update_chain(agent_config.agent_name, session_id, was_resume)
-                logger.info(f"Session chain updated for {agent_config.agent_name}: {session_id}")
-            
-            # Combine assistant messages
-            formatted_response = ''.join(assistant_messages).strip()
-            
-            # If no content was extracted, return the raw output
-            if not formatted_response:
-                formatted_response = '\n'.join(output_lines)
-            
-            # Add metadata footer
-            formatted_response += "\n\n---\n"
-            formatted_response += f"Agent: {agent_config.agent_name} (SDK mode)\n"
-            formatted_response += f"Model: {agent_config.model}\n"
-            
-            if tool_count > 0:
-                formatted_response += f"Tools used: {tool_count} ({', '.join(tools_used)})\n"
-            
-            if session_id:
-                formatted_response += f"Session: {session_id}\n"
-                
-                # Add session chain info
-                if agent_config.resume_session:
-                    chain_info = self.session_store.get_chain_info(agent_config.agent_name)
-                    if chain_info:
-                        formatted_response += f"Exchange: {chain_info['exchange_count']}"
-                        if agent_config.resume_session is True:
-                            formatted_response += "/5"
-                        else:
-                            formatted_response += f"/{agent_config.resume_session}"
-                        formatted_response += "\n"
-            
-            # Add token usage if available
-            if token_usage:
-                input_tokens = token_usage.get('input_tokens', 0)
-                output_tokens = token_usage.get('output_tokens', 0)
-                total_tokens = input_tokens + output_tokens
-                
-                formatted_response += f"\nTokens: {total_tokens:,} ({input_tokens:,} in, {output_tokens:,} out)"
-            
-            return formatted_response
-            
-        except Exception as e:
-            logger.error(f"Error executing task with SDK: {str(e)}")
-            return f"Error executing task with SDK: {str(e)}"
+        return list(self.agents.keys())

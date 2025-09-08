@@ -3,7 +3,7 @@
 agent-name: Example Agent
 description: UPDATED - This is an example agent template showing the structure of agent configuration files
 tools: Read, Write, Edit, Glob, Grep, Bash
-model: haiku
+model: sonnet
 cwd: .
 
 # OPTIONAL FIELDS
