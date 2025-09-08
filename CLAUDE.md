@@ -2,7 +2,7 @@
 
 ## 🎯 Quick Context
 
-You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v4.0.0 with simplified architecture - no built-in agents, only user-defined ones.
+You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v4.0.0 with simplified architecture - no built-in agents, only user-defined ones. **NEW**: Web UI with direct SDK integration for browser-based agent interaction!
 
 ### Key Architecture Points
 - Each agent = separate MCP tool (e.g., `analyst`, `dev`, `qa`)
@@ -11,23 +11,32 @@ You're working with a **multi-tool MCP server** where each user-defined AI agent
 - Tool names: lowercase with underscores (e.g., "Code Reviewer" → `code_reviewer`)
 - Built on FastMCP with dynamic tool registration
 - Python 3.11+ required
+- **Web UI**: React frontend + FastAPI backend with WebSocket streaming
+- **SDK Integration**: Direct agent execution without MCP overhead
 
 ## 📁 Project Structure
 
 ```
 task-agent/
-├── src/task_agents_mcp/
-│   ├── __init__.py          # Version: 4.0.0
-│   ├── server.py            # Multi-tool MCP server (main entry)
-│   ├── agent_manager.py     # Agent loader/executor
-│   ├── resource_manager.py  # MCP resource registration
-│   └── session_store.py     # Session management
-├── task-agents/             # User agent configs (ships with example)
-│   └── example-agent.md     # Template showing agent structure
-├── pyproject.toml           # Package config (name: task-agents-mcp)
-├── README.md                # User documentation
-├── CLAUDE.md                # This file
-└── MANIFEST.in              # Package manifest
+├── src/                     
+│   ├── task_agents_mcp/     # MCP server implementation
+│   │   ├── __init__.py      # Version: 4.0.0
+│   │   ├── server.py        # Multi-tool MCP server (main entry)
+│   │   ├── agent_manager.py # Agent loader/executor
+│   │   ├── resource_manager.py # MCP resource registration
+│   │   └── session_store.py # Session management
+│   └── sdk_integration/     # Direct SDK execution layer
+│       ├── agent_executor.py # High-level agent management
+│       └── sdk_executor.py  # Claude SDK integration
+├── web-ui/                  # Web interface (NEW!)
+│   ├── backend/            # FastAPI + WebSocket server
+│   └── frontend/           # React + TypeScript UI
+├── task-agents/            # User agent configs (ships with example)
+│   └── example-agent.md    # Template showing agent structure
+├── pyproject.toml          # Package config (name: task-agents-mcp)
+├── README.md               # User documentation
+├── CLAUDE.md               # This file
+└── MANIFEST.in             # Package manifest
 ```
 
 ## 🔧 Key Technical Details
@@ -61,6 +70,22 @@ config_dir = os.environ.get('TASK_AGENTS_PATH') or './task-agents'
 agent_manager = AgentManager(config_dir)
 agent_manager.load_agents()
 ```
+
+## 🌐 Web UI (NEW!)
+
+### Quick Start
+```bash
+cd web-ui
+./start.sh  # Starts both backend and frontend
+# Open http://localhost:5173 in your browser
+```
+
+### Features
+- Visual agent selection interface
+- Real-time streaming chat with WebSocket
+- Tool usage visualization
+- Session management with reset capability
+- Direct SDK integration (no MCP overhead)
 
 ## 📝 Common User Tasks
 
@@ -191,6 +216,37 @@ resource_uri = f"{sanitized_name}://"
 4. **Project scope**: Recommend `-s project` for Claude Code
 
 5. **Agent names**: Spaces become underscores in tool names
+
+## 📍 Navigation Guide
+
+### Subdirectory Documentation
+For detailed information about specific components, see:
+
+- **[/src/CLAUDE.md](/home/vredrick/task-agent/src/CLAUDE.md)** - Source code documentation
+  - MCP server implementation details
+  - SDK integration layer architecture
+  - Agent management and execution flow
+  - Session handling and persistence
+
+- **[/web-ui/CLAUDE.md](/home/vredrick/task-agent/web-ui/CLAUDE.md)** - Web UI documentation
+  - Frontend React architecture
+  - Backend FastAPI implementation
+  - WebSocket streaming protocol
+  - Development and deployment guide
+
+### Quick Navigation by Task
+
+**Want to understand the MCP server?**
+→ See `/src/CLAUDE.md` for server implementation
+
+**Working on the Web UI?**
+→ See `/web-ui/CLAUDE.md` for frontend/backend details
+
+**Need SDK integration details?**
+→ Check `/src/CLAUDE.md` SDK Integration section
+
+**Setting up agent configurations?**
+→ Review agent format in this file and examples in `task-agents/`
 
 ## 📚 Resources
 
