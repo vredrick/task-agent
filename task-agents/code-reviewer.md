@@ -2,9 +2,9 @@
 # REQUIRED FIELDS
 agent-name: Code Reviewer
 description: Reviews code for bugs, security issues, performance problems, and best practices
-tools: Read, Grep, Bash, Edit, MultiEdit
+tools: Read, Grep, Bash, Edit, MultiEdit, Write
 model: sonnet
-cwd: .
+cwd: /home/vredrick/task-agent/docs
 
 # OPTIONAL FIELDS
 optional:

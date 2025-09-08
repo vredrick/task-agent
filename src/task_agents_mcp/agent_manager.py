@@ -64,6 +64,9 @@ class AgentManager:
         if not os.path.exists(self.config_dir):
             logger.warning(f"Agent config directory {self.config_dir} does not exist")
             return
+        
+        # Clear existing agents to ensure fresh reload
+        self.agents = {}
             
         for filename in os.listdir(self.config_dir):
             if filename.endswith('.md'):

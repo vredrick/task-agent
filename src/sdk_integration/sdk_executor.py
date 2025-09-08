@@ -71,11 +71,23 @@ class SDKExecutor:
             logger.info("Removing ANTHROPIC_API_KEY to force OAuth subscription authentication")
             del os.environ['ANTHROPIC_API_KEY']  # Force OAuth fallback
         
-        # Get working directory
-        working_dir = agent_config.cwd if hasattr(agent_config, 'cwd') else None
+        # Get working directory from agent configuration
+        working_dir = agent_config.cwd if hasattr(agent_config, 'cwd') else "."
+        
+        # Handle working directory resolution
         if working_dir == ".":
-            # Resolve relative to project root (parent of task-agents directory)
+            # Default: resolve to project root (parent of task-agents directory)
+            # This maintains consistency with the original design
             working_dir = str(Path(__file__).parent.parent.parent.resolve())
+            logger.info(f"Using default project root directory: {working_dir}")
+        elif working_dir and not os.path.isabs(working_dir):
+            # If it's a relative path, resolve it relative to project root
+            project_root = Path(__file__).parent.parent.parent.resolve()
+            working_dir = str(project_root / working_dir)
+            logger.info(f"Resolved relative path to: {working_dir}")
+        else:
+            # Absolute path - use as-is
+            logger.info(f"Using absolute path from config: {working_dir}")
         
         try:
             if self.has_claude_max:

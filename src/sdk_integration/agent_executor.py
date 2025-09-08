@@ -77,6 +77,9 @@ class AgentExecutor:
         # Normalize agent name (replace underscores with hyphens)
         normalized_name = agent_name.replace('_', '-')
         
+        # Reload agents to pick up any configuration changes
+        self.agent_manager.load_agents()
+        
         # Find the agent
         agent_config = None
         for name, config in self.agent_manager.agents.items():
