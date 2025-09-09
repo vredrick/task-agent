@@ -6,12 +6,13 @@ import { Conversation, ConversationContent, ConversationScrollButton } from '@/c
 import { Message, MessageContent, MessageAvatar } from '@/components/ai-elements/message'
 import { Tool, ToolHeader, ToolContent, ToolInput } from '@/components/ai-elements/tool'
 import { CodeBlock, CodeBlockCopyButton } from '@/components/ai-elements/code-block'
-import { Response } from '@/components/ai-elements/response'
+import { Loader } from '@/components/ai-elements/loader'
+import { StreamingMessage } from '@/components/StreamingMessage'
 import AuthStatus from '@/components/AuthStatus'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Send, RotateCcw, Loader2, User, Bot, Paperclip, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Send, RotateCcw, User, Bot, Paperclip, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ChatMessage {
@@ -98,7 +99,8 @@ export default function Chat() {
                   setMessages(prev => [...prev, {
                     id: textMessageId,
                     role: 'assistant',
-                    content: currentText
+                    content: currentText,
+                    isStreaming: true  // Mark as streaming for animation
                   }])
                   setPendingResponse('') // Clear pending response
                 }
@@ -134,7 +136,8 @@ export default function Chat() {
                   setMessages(prev => [...prev, {
                     id: textMessageId,
                     role: 'assistant',
-                    content: currentResp
+                    content: currentResp,
+                    isStreaming: true  // Mark as streaming for animation
                   }])
                 }
                 return '' // Clear current response
@@ -241,14 +244,10 @@ export default function Chat() {
     setPendingResponse('') // Clear any previous pending response
     setCurrentMessageId(assistantMessageId)
     
-    // Reset textarea and container height after sending
+    // Reset textarea height after sending
     const textarea = document.querySelector('textarea')
     if (textarea) {
       textarea.style.height = '38px'
-      const container = textarea.closest('.relative')
-      if (container instanceof HTMLElement) {
-        container.style.minHeight = '76px'
-      }
     }
 
     try {
@@ -357,34 +356,12 @@ export default function Chat() {
                 ) : (
                   /* AI messages: no avatar, plain text */
                   <MessageContent role={message.role}>
-                    {/* Use Response component for proper markdown rendering */}
-                    <Response 
+                    {/* Use StreamingMessage for smooth text animation */}
+                    <StreamingMessage 
+                      content={message.content}
+                      isStreaming={message.isStreaming || false}
                       className="prose prose-sm dark:prose-invert max-w-none overflow-hidden"
-                      components={{
-                        pre: ({ children, ...props }) => {
-                          // Extract code content and language from the pre/code elements
-                          const codeElement = children as any
-                          const className = codeElement?.props?.className || ''
-                          const language = className.replace(/language-/, '') || 'plaintext'
-                          const code = codeElement?.props?.children || ''
-                          
-                          return (
-                            <div className="my-3">
-                              <CodeBlock 
-                                code={code}
-                                language={language}
-                                showLineNumbers={code.split('\n').length > 5}
-                                className="border-blue-900/30 dark:border-blue-400/30"
-                              >
-                                <CodeBlockCopyButton className="hover:bg-blue-900/10 dark:hover:bg-blue-400/10" />
-                              </CodeBlock>
-                            </div>
-                          )
-                        }
-                      }}
-                    >
-                      {message.content}
-                    </Response>
+                    />
                     
                     {/* Tool usage with ai-elements styling */}
                     {message.toolUse && (
@@ -412,14 +389,6 @@ export default function Chat() {
                         </div>
                       </div>
                     )}
-                    
-                    {/* Streaming indicator */}
-                    {message.isStreaming && (
-                      <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        <span>Streaming...</span>
-                      </div>
-                    )}
                   </MessageContent>
                 )}
               </Message>
@@ -428,9 +397,9 @@ export default function Chat() {
             {loading && !streamingMessage && (
               <Message from="assistant">
                 <MessageContent role="assistant">
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Agent is thinking...</span>
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader size={14} className="text-primary" />
+                    <span className="text-sm">Thinking...</span>
                   </div>
                 </MessageContent>
               </Message>
@@ -443,51 +412,47 @@ export default function Chat() {
         {/* Claude Desktop Style Input Area - Fixed Position */}
         <div className="fixed bottom-0 left-0 right-0 p-2 z-50 bg-gradient-to-t from-background via-background/95 to-transparent">
           <div className="max-w-2xl mx-auto">
-            {/* Single input container with Claude styling - expands with content */}
-            <div className="relative bg-background border border-input rounded-2xl p-4 min-h-[76px] transition-all duration-200">
-              {/* Main Input Field - Full width on top */}
-              <div className="flex flex-col h-full">
-                <Textarea
-                  value={input}
-                  onChange={(e) => {
-                    setInput(e.target.value)
-                    // Auto-resize textarea and container
-                    const target = e.target
-                    target.style.height = 'auto'
-                    const newHeight = Math.min(target.scrollHeight, 192) // max 8 lines
-                    target.style.height = newHeight + 'px'
-                    
-                    // Expand container based on textarea height
-                    const container = target.closest('.relative') as HTMLElement
-                    if (container) {
-                      // Base height is 76px, expand as textarea grows
-                      const baseHeight = 76
-                      const textareaBaseHeight = 38
-                      const expansion = Math.max(0, newHeight - textareaBaseHeight)
-                      container.style.minHeight = (baseHeight + expansion) + 'px'
-                    }
-                  }}
+            {/* Single input container with Claude styling - expands upward only */}
+            <div 
+              className="relative bg-background border border-input rounded-2xl transition-all duration-200"
+              style={{ minHeight: '76px' }}
+            >
+              {/* Main Input Field - Expands upward */}
+              <div className="flex flex-col">
+                {/* Textarea container that expands */}
+                <div className="p-4 pb-2">
+                  <Textarea
+                    value={input}
+                    onChange={(e) => {
+                      setInput(e.target.value)
+                      // Auto-resize textarea only
+                      const target = e.target
+                      target.style.height = 'auto'
+                      const newHeight = Math.min(target.scrollHeight, 192) // max 8 lines
+                      target.style.height = newHeight + 'px'
+                    }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
                       handleSend()
                     }
-                  }}
-                  placeholder={`Reply to ${agent?.name || 'Agent'}...`}
-                  disabled={loading || connecting || !wsRef.current}
-                  className={cn(
-                    "flex-1 min-h-[38px] max-h-[192px] resize-none border-0 bg-transparent p-0",
-                    "focus-visible:ring-0 focus-visible:ring-offset-0",
-                    "disabled:opacity-50 disabled:cursor-not-allowed",
-                    "text-sm leading-relaxed placeholder:text-muted-foreground",
-                    "overflow-y-auto"
-                  )}
-                  style={{ height: '38px' }}
-                  rows={1}
-                />
+                    }}
+                    placeholder={`Reply to ${agent?.name || 'Agent'}...`}
+                    disabled={loading || connecting || !wsRef.current}
+                    className={cn(
+                      "w-full min-h-[38px] max-h-[192px] resize-none border-0 bg-transparent p-0",
+                      "focus-visible:ring-0 focus-visible:ring-offset-0",
+                      "disabled:opacity-50 disabled:cursor-not-allowed",
+                      "text-sm leading-relaxed placeholder:text-muted-foreground",
+                      "overflow-y-auto"
+                    )}
+                    style={{ height: '38px' }}
+                    rows={1}
+                  />
+                </div>
                 
-                {/* Bottom Controls Row */}
-                <div className="flex items-center justify-between pt-2 mt-2">
+                {/* Bottom Controls Row - Fixed at bottom */}
+                <div className="flex items-center justify-between px-4 pb-3">
                   {/* Upload Button - Bottom Left */}
                   <Button 
                     variant="ghost" 
@@ -519,7 +484,7 @@ export default function Chat() {
                       className="h-8 w-8 p-0 bg-primary hover:bg-primary/90"
                     >
                       {loading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader size={16} />
                       ) : (
                         <Send className="w-4 h-4" />
                       )}

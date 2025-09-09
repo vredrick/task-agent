@@ -81,11 +81,14 @@ cd web-ui
 ```
 
 ### Features
-- Visual agent selection interface
-- Real-time streaming chat with WebSocket
-- Tool usage visualization
+- Visual agent selection interface with card-based layout
+- Real-time streaming chat with word-by-word animation (40ms/word)
+- Rich markdown rendering with syntax-highlighted code blocks
+- Tool usage visualization with dark blue accent theme
 - Session management with reset capability
 - Direct SDK integration (no MCP overhead)
+- Custom AI Elements components for professional UI
+- Smooth text streaming that fills processing gaps
 
 ## 📝 Common User Tasks
 

@@ -2,6 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom prose styling for Response component */
+@layer components {
+  .prose {
+    @apply text-foreground;
+  }
+  
+  .prose p {
+    @apply mb-4 leading-relaxed;
+  }
+  
+  .prose h1 {
+    @apply text-2xl font-bold mb-4 mt-6;
+  }
+  
+  .prose h2 {
+    @apply text-xl font-semibold mb-3 mt-5;
+  }
+  
+  .prose h3 {
+    @apply text-lg font-semibold mb-2 mt-4;
+  }
+  
+  .prose ul, .prose ol {
+    @apply mb-4 pl-6;
+  }
+  
+  .prose li {
+    @apply mb-1;
+  }
+  
+  .prose code:not(pre code) {
+    @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+  }
+  
+  .prose blockquote {
+    @apply border-l-4 border-primary/30 pl-4 italic my-4;
+  }
+  
+  .prose a {
+    @apply text-primary hover:underline;
+  }
+  
+  .prose strong {
+    @apply font-semibold;
+  }
+  
+  .prose em {
+    @apply italic;
+  }
+  
+  /* Dark mode adjustments */
+  .dark .prose code:not(pre code) {
+    @apply bg-secondary/50;
+  }
+  
+  .dark .prose blockquote {
+    @apply border-blue-400/30;
+  }
+
+  /* Code block overflow handling */
+  .prose pre {
+    @apply overflow-x-auto max-w-full;
+  }
+
+  .prose pre code {
+    @apply whitespace-pre;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

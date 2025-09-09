@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This directory contains a modern web interface for interacting with task agents through direct SDK integration. The UI provides a user-friendly alternative to CLI interaction, offering real-time streaming responses, session management, and visual feedback for agent operations.
+This directory contains a modern web interface for interacting with task agents through direct SDK integration. The UI provides a user-friendly alternative to CLI interaction, offering real-time streaming responses with word-by-word animation, session management, and visual feedback for agent operations.
 
 ## Architecture Overview
 
@@ -15,10 +15,13 @@ web-ui/
 │   └── venv/        # Python virtual environment
 └── frontend/        # React TypeScript application
     ├── src/
-    │   ├── pages/   # React page components
-    │   ├── components/ # Reusable UI components
-    │   └── lib/     # API clients and utilities
-    └── dist/        # Production build output
+    │   ├── pages/          # React page components
+    │   ├── components/     # Reusable UI components
+    │   │   ├── ai-elements/  # AI-specific UI components
+    │   │   └── ui/           # Base UI components (shadcn/ui)
+    │   ├── hooks/          # Custom React hooks
+    │   └── lib/            # API clients and utilities
+    └── dist/            # Production build output
 ```
 
 ## Key Components
@@ -39,17 +42,41 @@ web-ui/
 ### Frontend (React + TypeScript + Tailwind)
 
 **Pages:**
-- `AgentSelection.tsx` - Browse and select available agents
-- `Chat.tsx` - Real-time chat interface with WebSocket streaming
+- `AgentSelection.tsx` - Browse and select available agents with card-based UI
+- `Chat.tsx` - Real-time chat interface with streaming animation and tool visualization
 
-**Components:**
-- UI components using Radix UI and Tailwind CSS
-- Custom theming with class-variance-authority
+**Core Components:**
+
+**AI Elements Components (NEW):**
+- `Response` - Markdown renderer using Streamdown for rich text display
+- `CodeBlock` - Syntax-highlighted code blocks with copy functionality
+- `Loader` - Animated thinking indicator for processing states
+- `Tool` - Tool usage visualization with input/output display
+- `Conversation` - Chat container with auto-scrolling
+- `Message` - Individual message wrapper with avatar support
+
+**Custom Components:**
+- `StreamingMessage` - Wraps Response with word-by-word streaming animation
+- `ChatMessage` - Legacy message component (being phased out)
+- `AgentCard` - Card display for agent selection
+- `AuthStatus` - OAuth authentication status indicator
+
+**UI Components (shadcn/ui):**
+- `Button`, `Textarea`, `Select` - Form controls
+- `Avatar`, `Badge` - Display components
+- `Collapsible` - Expandable content sections
+
+**Custom Hooks:**
+- `useStreamingText` - Manages word-by-word text streaming animation
+  - 40ms delay between words for natural reading pace
+  - Buffers incoming chunks and streams smoothly
+  - Fills processing gaps to reduce perceived latency
 
 **Libraries:**
 - WebSocket client for real-time communication
 - API client for REST endpoints
-- Tailwind CSS for styling
+- Tailwind CSS with custom dark blue theme (#1e40af)
+- Streamdown for markdown parsing and rendering
 
 ## SDK Integration Flow
 
@@ -113,6 +140,70 @@ pydantic==2.5.0
 - Vite 5.0.0
 - Tailwind CSS 3.3.6
 - React Router 6.20.0
+- Streamdown (markdown rendering)
+- Radix UI (component primitives)
+- class-variance-authority (component variants)
+- lucide-react (icons)
+
+## Streaming Architecture (NEW)
+
+### Text Streaming Animation
+The frontend implements a sophisticated streaming system that creates a smooth word-by-word animation effect:
+
+1. **Backend Behavior**: SDK returns complete responses, but frontend creates streaming illusion
+2. **Chunk Buffering**: WebSocket messages are buffered and streamed word-by-word
+3. **Animation Speed**: 40ms per word for natural reading pace
+4. **Gap Filling**: Continuous animation fills processing gaps, reducing perceived latency
+5. **Message Marking**: Messages flagged with `isStreaming: true` for animation control
+
+### UI Design Principles
+
+**Message Styling:**
+- **User Messages**: Dark bubble with rounded corners (`rounded-xl`), user avatar inside
+- **AI Messages**: Plain text without background for cleaner appearance
+- **Tool Usage**: Dark blue borders (`border-blue-900/30 dark:border-blue-400/30`)
+- **Code Blocks**: Syntax highlighting with copy button, line numbers for long snippets
+
+**Color Theme:**
+- Primary accent: Dark blue (`#1e40af`) replacing previous orange theme
+- Consistent blue tones throughout UI components
+- Dark mode optimized with `blue-400` variants
+
+**Input Area Design:**
+- Fixed position at bottom of screen
+- Textarea expands upward as content grows
+- Button controls remain fixed at bottom
+- Separated textarea container from action buttons
+
+### Custom CSS Styling
+
+The application includes custom prose styling in `index.css` for optimal markdown rendering:
+
+```css
+/* Custom prose classes for Response component */
+.prose {
+  @apply text-base leading-relaxed text-gray-900 dark:text-gray-100;
+}
+
+/* Typography scaling and spacing */
+.prose p { @apply mb-4; }
+.prose h1 { @apply text-3xl font-bold mb-4 mt-6; }
+.prose h2 { @apply text-2xl font-semibold mb-3 mt-5; }
+.prose h3 { @apply text-xl font-medium mb-2 mt-4; }
+
+/* Code and blockquote styling */
+.prose code:not(pre code) {
+  @apply px-1 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-sm;
+}
+.prose blockquote {
+  @apply border-l-4 border-gray-300 dark:border-blue-400/30 pl-4 italic;
+}
+```
+
+Theme colors are defined using CSS variables for consistency:
+- Primary color: Dark blue (`--primary: 213 94% 27%` → `#1e40af`)
+- All orange references replaced with blue variants
+- Dark mode uses lighter blue shades for contrast
 
 ## WebSocket Protocol
 
@@ -127,13 +218,19 @@ pydantic==2.5.0
 
 // Server -> Client
 {
-  type: "content" | "tool_use" | "error" | "complete",
-  content?: string,
-  tool?: {
-    name: string,
-    input: any
+  type: "text" | "tool_use" | "error" | "complete" | "metadata",
+  content?: {
+    text?: string        // For text chunks
   },
-  error?: string
+  name?: string,         // For tool use
+  input?: any,           // For tool use
+  error?: string,        // For errors
+  data?: {               // For metadata
+    cost: number,
+    duration: number,
+    tokens: number,
+    session_id: string
+  }
 }
 ```
 
