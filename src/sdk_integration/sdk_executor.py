@@ -25,6 +25,9 @@ import logging
 from typing import AsyncGenerator, Optional, Dict, Any
 from pathlib import Path
 
+from .oauth_handler import prepare_oauth_environment
+from .message_parser import SDKMessageParser
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,11 +68,8 @@ class SDKExecutor:
         if not self.has_sdk:
             raise RuntimeError("Claude Code SDK is not installed. Please install claude-code-sdk or claude-max.")
         
-        # IMPORTANT: Don't set ANTHROPIC_API_KEY to use subscription OAuth
-        # SDK will automatically use ~/.claude/.credentials.json (note the dot!)
-        if 'ANTHROPIC_API_KEY' in os.environ:
-            logger.info("Removing ANTHROPIC_API_KEY to force OAuth subscription authentication")
-            del os.environ['ANTHROPIC_API_KEY']  # Force OAuth fallback
+        # Handle OAuth authentication (separated for safety)
+        prepare_oauth_environment()
         
         # Get working directory from agent configuration
         working_dir = agent_config.cwd if hasattr(agent_config, 'cwd') else "."
@@ -111,6 +111,9 @@ class SDKExecutor:
                     max_turns=getattr(agent_config, 'max_exchanges', 5) if hasattr(agent_config, 'max_exchanges') else 5
                 )
                 
+                # Initialize message parser
+                parser = SDKMessageParser()
+                
                 # Use exact pattern from documentation
                 async with ClaudeSDKClient(options=options) as client:
                     await client.query(task_description)
@@ -120,14 +123,56 @@ class SDKExecutor:
 
                     async for message in client.receive_messages():
                         messages.append(message)
-
-                        # Stream text content as it arrives
-                        if hasattr(message, 'content'):
-                            for block in message.content:
-                                block_type = type(block).__name__
+                        message_type = type(message).__name__
+                        
+                        # Parse message using the new parser
+                        parsed_message = parser.parse_message(message)
+                        
+                        if parsed_message:
+                            # Handle different message types
+                            if parsed_message.get("type") == "assistant_message":
+                                # Stream assistant message blocks
+                                for block in parsed_message.get("blocks", []):
+                                    if block["type"] == "text":
+                                        # Stream text content
+                                        yield parser.create_text_event(block["content"])
+                                    elif block["type"] == "tool_use":
+                                        # Stream tool use
+                                        yield parser.create_tool_use_event(
+                                            name=block["name"],
+                                            input_data=block["input"],
+                                            tool_id=block.get("id")
+                                        )
+                            
+                            elif parsed_message.get("type") == "system_message":
+                                # Stream system message blocks (tool results)
+                                for block in parsed_message.get("blocks", []):
+                                    if block["type"] == "tool_result":
+                                        yield parser.create_tool_result_event(
+                                            tool_use_id=block["tool_use_id"],
+                                            output=block["output"],
+                                            is_error=block["is_error"]
+                                        )
+                                    elif block["type"] == "text":
+                                        # System text (notifications)
+                                        yield parser.create_text_event(block["content"])
+                            
+                            elif parsed_message.get("type") == "result":
+                                # Result message with metadata
+                                result_data = parsed_message
                                 
+                                # Send metadata event
+                                yield parser.create_metadata_event(result_data)
+                                
+                                logger.info(f"SDK completed with metadata: {result_data}")
+                                break
+                        
+                        # Fallback to original streaming for compatibility
+                        # This ensures we don't break anything if parsing fails
+                        elif hasattr(message, 'content') and not parsed_message:
+                            logger.warning(f"Falling back to original streaming for message type: {message_type}")
+                            for block in message.content:
                                 if hasattr(block, 'text'):
-                                    # Output text content immediately for streaming
                                     json_event = {
                                         "type": "text",
                                         "content": {
@@ -135,46 +180,6 @@ class SDKExecutor:
                                         }
                                     }
                                     yield json.dumps(json_event)
-                                elif block_type == 'ToolUseBlock':
-                                    # Tool use block - check by class name
-                                    json_event = {
-                                        "type": "tool_use",
-                                        "name": getattr(block, 'name', 'unknown'),
-                                        "input": getattr(block, 'input', {})
-                                    }
-                                    yield json.dumps(json_event)
-
-                        # Capture result message with metadata - exact pattern from docs
-                        if type(message).__name__ == "ResultMessage":
-                            result_text = getattr(message, 'result', '')
-                            
-                            # Don't output result_text here - it's already been streamed from content blocks
-                            # Just send metadata - SDK provides session_id directly
-                            result_data = {
-                                "result": result_text,
-                                "cost": getattr(message, 'total_cost_usd', 0.0),
-                                "duration": getattr(message, 'duration_ms', 0),
-                                "num_turns": getattr(message, 'num_turns', 1),
-                                "session_id": getattr(message, 'session_id', None),  # SDK provides session_id
-                                "conversation_id": getattr(message, 'session_id', None)  # Also as conversation_id for backend compatibility
-                            }
-                            
-                            # Include usage if available
-                            if hasattr(message, 'usage'):
-                                usage = message.usage
-                                result_data["usage"] = {
-                                    "input_tokens": getattr(usage, 'input_tokens', 0),
-                                    "output_tokens": getattr(usage, 'output_tokens', 0)
-                                }
-                            
-                            # Output the complete metadata as JSON
-                            yield json.dumps({
-                                "type": "metadata",
-                                "data": result_data
-                            })
-                            
-                            logger.info(f"SDK completed with metadata: {result_data}")
-                            break
                     
         except Exception as e:
             logger.error(f"SDK execution failed: {e}")

@@ -187,6 +187,10 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                                 logger.info(f"Updated session {session_id} with conversation_id: {new_conv_id}")
                             response_complete = True  # Metadata usually means response is complete
                         
+                        # Log tool use for debugging
+                        if chunk_data.get("type") == "tool_use":
+                            logger.info(f"Sending tool_use to frontend: {chunk_data}")
+                        
                         # Send to client
                         await websocket.send_json(chunk_data)
                     except json.JSONDecodeError:
