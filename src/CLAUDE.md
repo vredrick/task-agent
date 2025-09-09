@@ -87,10 +87,15 @@ src/
   - OAuth credential loading
   - Tool registration from agent config
   - Streaming response handling
-  - Session context management
+  - Session context management with chaining
 - **Credential Paths**:
   - `~/.claude/.credentials.json`
   - `/home/task-agent/.claude/.credentials.json`
+- **Session Resumption**:
+  - SDK returns new `session_id` with each response
+  - Each new session_id is used for the next message
+  - Creates a conversation chain for context continuity
+  - Only works when agent has `resume-session: true`
 
 ## Patterns & Conventions
 

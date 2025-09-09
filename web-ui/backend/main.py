@@ -178,12 +178,14 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                     try:
                         chunk_data = json.loads(chunk)
                         
-                        # Extract conversation ID if present
-                        if chunk_data.get("conversation_id") or chunk_data.get("session_id"):
-                            new_conv_id = chunk_data.get("conversation_id") or chunk_data.get("session_id")
-                            session["conversation_id"] = new_conv_id
-                            logger.info(f"Updated session {session_id} with conversation_id: {new_conv_id}")
-                            response_complete = True  # Session info usually means response is complete
+                        # Extract conversation ID from metadata
+                        if chunk_data.get("type") == "metadata":
+                            metadata = chunk_data.get("data", {})
+                            new_conv_id = metadata.get("conversation_id") or metadata.get("session_id")
+                            if new_conv_id:
+                                session["conversation_id"] = new_conv_id
+                                logger.info(f"Updated session {session_id} with conversation_id: {new_conv_id}")
+                            response_complete = True  # Metadata usually means response is complete
                         
                         # Send to client
                         await websocket.send_json(chunk_data)

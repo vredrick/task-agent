@@ -111,24 +111,23 @@ class SDKExecutor:
                     max_turns=getattr(agent_config, 'max_exchanges', 5) if hasattr(agent_config, 'max_exchanges') else 5
                 )
                 
-                # Use async context manager pattern as shown in docs
+                # Use exact pattern from documentation
                 async with ClaudeSDKClient(options=options) as client:
-                    # Send the query
                     await client.query(task_description)
-                    
-                    # Receive and convert responses to JSON format
-                    conversation_id = None
-                    session_id_output = None
-                    total_cost = 0.0
-                    input_tokens = 0
-                    output_tokens = 0
-                    
-                    async for msg in client.receive_response():
-                        if hasattr(msg, 'content'):
-                            # Process message content blocks
-                            for block in msg.content:
+
+                    messages = []
+                    result_data = None
+
+                    async for message in client.receive_messages():
+                        messages.append(message)
+
+                        # Stream text content as it arrives
+                        if hasattr(message, 'content'):
+                            for block in message.content:
+                                block_type = type(block).__name__
+                                
                                 if hasattr(block, 'text'):
-                                    # Text block - convert to stream-json format
+                                    # Output text content immediately for streaming
                                     json_event = {
                                         "type": "text",
                                         "content": {
@@ -136,56 +135,45 @@ class SDKExecutor:
                                         }
                                     }
                                     yield json.dumps(json_event)
-                                    
-                                elif hasattr(block, 'type') and block.type == 'tool_use':
-                                    # Tool use block
+                                elif block_type == 'ToolUseBlock':
+                                    # Tool use block - check by class name
                                     json_event = {
                                         "type": "tool_use",
                                         "name": getattr(block, 'name', 'unknown'),
                                         "input": getattr(block, 'input', {})
                                     }
                                     yield json.dumps(json_event)
-                        
-                        # Check for ResultMessage using type name (more robust)
-                        if type(msg).__name__ == "ResultMessage":
-                            # Extract session info and usage
-                            session_id_output = getattr(msg, 'session_id', None)
-                            conversation_id = getattr(msg, 'conversation_id', session_id_output)
-                            total_cost = getattr(msg, 'total_cost_usd', 0.0)
-                            logger.info(f"SDK ResultMessage - session_id: {session_id_output}, conversation_id: {conversation_id}")
+
+                        # Capture result message with metadata - exact pattern from docs
+                        if type(message).__name__ == "ResultMessage":
+                            result_text = getattr(message, 'result', '')
                             
-                            # Try to get token usage from result
-                            if hasattr(msg, 'usage'):
-                                usage = msg.usage
-                                input_tokens = getattr(usage, 'input_tokens', 0)
-                                output_tokens = getattr(usage, 'output_tokens', 0)
-                            elif hasattr(msg, 'input_tokens'):
-                                input_tokens = getattr(msg, 'input_tokens', 0)
-                                output_tokens = getattr(msg, 'output_tokens', 0)
+                            # Don't output result_text here - it's already been streamed from content blocks
+                            # Just send metadata - SDK provides session_id directly
+                            result_data = {
+                                "result": result_text,
+                                "cost": getattr(message, 'total_cost_usd', 0.0),
+                                "duration": getattr(message, 'duration_ms', 0),
+                                "num_turns": getattr(message, 'num_turns', 1),
+                                "session_id": getattr(message, 'session_id', None),  # SDK provides session_id
+                                "conversation_id": getattr(message, 'session_id', None)  # Also as conversation_id for backend compatibility
+                            }
                             
-                            # Send session info event (important for resumption)
-                            if session_id_output or conversation_id:
-                                json_event = {
-                                    "type": "session_info",  # Add type field
-                                    "claude_version": "SDK",
-                                    "conversation_id": session_id_output or conversation_id,
-                                    "session_id": session_id_output  # Include both for compatibility
+                            # Include usage if available
+                            if hasattr(message, 'usage'):
+                                usage = message.usage
+                                result_data["usage"] = {
+                                    "input_tokens": getattr(usage, 'input_tokens', 0),
+                                    "output_tokens": getattr(usage, 'output_tokens', 0)
                                 }
-                                yield json.dumps(json_event)
                             
-                            # Send usage event
-                            if input_tokens or output_tokens:
-                                json_event = {
-                                    "type": "usage",
-                                    "usage": {
-                                        "input_tokens": input_tokens,
-                                        "output_tokens": output_tokens,
-                                        "total_cost_usd": total_cost
-                                    }
-                                }
-                                yield json.dumps(json_event)
+                            # Output the complete metadata as JSON
+                            yield json.dumps({
+                                "type": "metadata",
+                                "data": result_data
+                            })
                             
-                            # Result message indicates completion
+                            logger.info(f"SDK completed with metadata: {result_data}")
                             break
                     
         except Exception as e:

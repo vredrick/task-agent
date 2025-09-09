@@ -114,12 +114,19 @@ class AgentExecutor:
             try:
                 logger.info(f"Executing agent {agent_name} using SDK")
                 # SDK session management is separate from CLI sessions
-                # If session_id is provided and looks like an SDK conversation ID (UUID format),
-                # use it for SDK resumption. Otherwise start fresh.
+                # Only use session resumption if the agent has resume-session enabled
                 sdk_session_id = None
-                if session_id and '-' in str(session_id):  # UUID format check
+                if session_reset:
+                    # Explicitly requested reset - don't resume even if we have a session
+                    logger.info("Session reset requested - starting fresh")
+                    sdk_session_id = None
+                elif agent_config.resume_session and session_id and '-' in str(session_id):  # Check config AND UUID format
                     sdk_session_id = session_id
                     logger.info(f"Using SDK conversation ID for resumption: {sdk_session_id}")
+                elif agent_config.resume_session:
+                    logger.info("Agent has resume-session enabled but no valid session_id provided")
+                else:
+                    logger.info("Agent does not have resume-session enabled, starting fresh")
                 
                 async for chunk in self.sdk_executor.execute_task(
                     agent_config=agent_config,

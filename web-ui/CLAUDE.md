@@ -143,6 +143,12 @@ pydantic==2.5.0
 - Stored in backend memory (ephemeral)
 - Reset capability through UI button
 - Automatic cleanup on disconnect
+- **Session Resumption Chain**:
+  - Each SDK response includes a new `session_id`
+  - Backend extracts and stores this from metadata
+  - Next message uses the latest `session_id` for continuity
+  - Only active when agent has `resume-session: true`
+  - Creates conversation chains maintaining full context
 
 ## Security Considerations
 
@@ -177,6 +183,12 @@ For production deployment:
 **"No agents available"**
 - Add `.md` files to `task-agents/` directory
 - Check agent file format is valid
+
+**"Session not resuming / Context not maintained"**
+- Verify agent has `resume-session: true` in config
+- Check that backend is extracting session_id from metadata
+- Ensure frontend is maintaining WebSocket session UUID
+- Note: Each message gets a new session_id for chaining
 
 ## Related Documentation
 
