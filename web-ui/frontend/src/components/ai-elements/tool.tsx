@@ -24,7 +24,7 @@ export type ToolProps = ComponentProps<typeof Collapsible>;
 export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
     className={cn(
-      'not-prose w-full',
+      'not-prose w-full overflow-hidden min-w-0',
       className
     )}
     {...props}
@@ -104,11 +104,11 @@ export type ToolInputProps = ComponentProps<'div'> & {
 };
 
 export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
-  <div className={cn('space-y-2 overflow-hidden px-3 pb-3', className)} {...props}>
+  <div className={cn('space-y-2 px-3 pb-3 overflow-hidden', className)} {...props}>
     <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
       Input
     </h4>
-    <div className="rounded-md bg-muted/20">
+    <div className="rounded-md bg-muted/20 overflow-hidden">
       <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
     </div>
   </div>
@@ -130,7 +130,7 @@ export const ToolOutput = ({
   }
 
   return (
-    <div className={cn('space-y-3 px-4 pb-4', className)} {...props}>
+    <div className={cn('space-y-3 px-4 pb-4 overflow-hidden', className)} {...props}>
       <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
         {errorText ? 'Error' : 'Response'}
       </h4>
@@ -142,8 +142,8 @@ export const ToolOutput = ({
             : 'bg-muted/30 text-foreground'
         )}
       >
-        {errorText && <div className="p-3">{errorText}</div>}
-        {output && <div>{output}</div>}
+        {errorText && <div className="p-3 break-words">{errorText}</div>}
+        {output && <div className="overflow-x-auto">{output}</div>}
       </div>
     </div>
   );

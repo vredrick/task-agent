@@ -14,7 +14,7 @@ export type MessageProps = HTMLAttributes<HTMLDivElement> & {
 export const Message = ({ className, from, ...props }: MessageProps) => (
   <div
     className={cn(
-      'group flex w-full items-start gap-3 py-3',
+      'group flex w-full items-start gap-3 py-3 min-w-0',
       // Both user and AI messages are left-aligned like Claude Desktop
       from === 'user' ? 'is-user' : 'is-assistant',
       className
@@ -39,7 +39,7 @@ export const MessageContent = ({
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 text-sm leading-relaxed text-foreground flex-1',
+        'flex flex-col gap-2 text-sm leading-relaxed text-foreground flex-1 min-w-0 overflow-hidden',
         // User messages: dark bubble with rounded corners like Claude
         isUser && 'bg-secondary text-secondary-foreground rounded-2xl px-4 py-3 max-w-[75%]',
         // AI messages: plain text, no background, like Claude Desktop

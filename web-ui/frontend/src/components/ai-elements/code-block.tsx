@@ -42,10 +42,9 @@ export const CodeBlock = ({
       )}
       {...props}
     >
-      <div className="relative">
-        {/* @ts-expect-error - SyntaxHighlighter is not a valid JSX component */}
+      <div className="relative overflow-x-auto">
         <SyntaxHighlighter
-          className="overflow-hidden dark:hidden"
+          className="!overflow-x-auto dark:hidden"
           codeTagProps={{
             className: 'font-mono text-sm',
           }}
@@ -55,6 +54,11 @@ export const CodeBlock = ({
             fontSize: '0.875rem',
             background: 'hsl(var(--background))',
             color: 'hsl(var(--foreground))',
+            whiteSpace: 'pre',
+            wordWrap: 'normal',
+            overflowWrap: 'normal',
+            overflow: 'auto',
+            maxWidth: '100%',
           }}
           language={language}
           lineNumberStyle={{
@@ -64,12 +68,13 @@ export const CodeBlock = ({
           }}
           showLineNumbers={showLineNumbers}
           style={oneLight}
+          wrapLines={false}
+          wrapLongLines={false}
         >
           {code}
         </SyntaxHighlighter>
-        {/* @ts-expect-error - SyntaxHighlighter is not a valid JSX component */}
         <SyntaxHighlighter
-          className="hidden overflow-hidden dark:block"
+          className="hidden !overflow-x-auto dark:block"
           codeTagProps={{
             className: 'font-mono text-sm',
           }}
@@ -79,6 +84,11 @@ export const CodeBlock = ({
             fontSize: '0.875rem',
             background: 'hsl(var(--background))',
             color: 'hsl(var(--foreground))',
+            whiteSpace: 'pre',
+            wordWrap: 'normal',
+            overflowWrap: 'normal',
+            overflow: 'auto',
+            maxWidth: '100%',
           }}
           language={language}
           lineNumberStyle={{
@@ -88,11 +98,13 @@ export const CodeBlock = ({
           }}
           showLineNumbers={showLineNumbers}
           style={oneDark}
+          wrapLines={false}
+          wrapLongLines={false}
         >
           {code}
         </SyntaxHighlighter>
         {children && (
-          <div className="absolute top-2 right-2 flex items-center gap-2">
+          <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
             {children}
           </div>
         )}

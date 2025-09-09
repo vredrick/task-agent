@@ -5,7 +5,8 @@ import { ChatWebSocket, type ChatMessage as WSMessage } from '@/lib/websocket'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Message, MessageContent, MessageAvatar } from '@/components/ai-elements/message'
 import { Tool, ToolHeader, ToolContent, ToolInput } from '@/components/ai-elements/tool'
-import { CodeBlock } from '@/components/ai-elements/code-block'
+import { CodeBlock, CodeBlockCopyButton } from '@/components/ai-elements/code-block'
+import { Response } from '@/components/ai-elements/response'
 import AuthStatus from '@/components/AuthStatus'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -111,7 +112,7 @@ export default function Chat() {
               const toolUseData = {
                 name: message.name || 'Unknown',
                 input: message.input,
-                state: 'running' as const
+                state: 'input-available' as const
               }
               
               setMessages(prev => [...prev, {
@@ -331,7 +332,7 @@ export default function Chat() {
 
       {/* Chat Area */}
       <div className="flex-1 overflow-hidden flex flex-col relative">
-        <Conversation className="flex-1 max-w-3xl mx-auto w-full px-4 pb-32">
+        <Conversation className="flex-1 max-w-3xl mx-auto w-full px-4 pb-32 min-w-0">
           <ConversationContent>
             {messages.length === 0 && !streamingMessage && (
               <div className="flex items-center justify-center h-full text-muted-foreground p-8">
@@ -341,16 +342,56 @@ export default function Chat() {
             
             {[...messages, ...(streamingMessage ? [streamingMessage] : [])].map(message => (
               <Message key={message.id} from={message.role}>
-                <MessageContent role={message.role}>
-                  {message.content}
-                  
-                  {/* Tool usage with minimal Claude Desktop styling */}
-                  {message.toolUse && (
-                    <div className="mt-2 rounded-md border border-border/40 bg-muted/10 overflow-hidden">
-                      <Tool>
+                {/* User messages: avatar inside the bubble on the left */}
+                {message.role === 'user' ? (
+                  <div className="flex items-center gap-3 bg-secondary text-secondary-foreground rounded-xl px-4 py-2 max-w-[75%]">
+                    <MessageAvatar
+                      src="/user-avatar.png"
+                      name="User"
+                      className="size-8"
+                    />
+                    <div className="text-sm leading-relaxed flex-1">
+                      {message.content}
+                    </div>
+                  </div>
+                ) : (
+                  /* AI messages: no avatar, plain text */
+                  <MessageContent role={message.role}>
+                    {/* Use Response component for proper markdown rendering */}
+                    <Response 
+                      className="prose prose-sm dark:prose-invert max-w-none overflow-hidden"
+                      components={{
+                        pre: ({ children, ...props }) => {
+                          // Extract code content and language from the pre/code elements
+                          const codeElement = children as any
+                          const className = codeElement?.props?.className || ''
+                          const language = className.replace(/language-/, '') || 'plaintext'
+                          const code = codeElement?.props?.children || ''
+                          
+                          return (
+                            <div className="my-3">
+                              <CodeBlock 
+                                code={code}
+                                language={language}
+                                showLineNumbers={code.split('\n').length > 5}
+                                className="border-blue-900/30 dark:border-blue-400/30"
+                              >
+                                <CodeBlockCopyButton className="hover:bg-blue-900/10 dark:hover:bg-blue-400/10" />
+                              </CodeBlock>
+                            </div>
+                          )
+                        }
+                      }}
+                    >
+                      {message.content}
+                    </Response>
+                    
+                    {/* Tool usage with ai-elements styling */}
+                    {message.toolUse && (
+                      <Tool className="mt-3 border border-blue-900/30 dark:border-blue-400/30 rounded-lg">
                         <ToolHeader
                           type={message.toolUse.name}
-                          state={message.toolUse.state || 'running'}
+                          state={message.toolUse.state || 'input-available'}
                         />
                         <ToolContent>
                           {message.toolUse.input && (
@@ -358,34 +399,29 @@ export default function Chat() {
                           )}
                         </ToolContent>
                       </Tool>
-                    </div>
-                  )}
-                  
-                  {/* Compact metadata display - only show at end of conversation */}
-                  {message.metadata && message.id === messages[messages.length - 1]?.id && (
-                    <div className="mt-3 pt-3 border-t border-border/20">
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>${message.metadata.cost.toFixed(4)}</span>
-                        <span>{message.metadata.duration}ms</span>
-                        <span>{message.metadata.tokens} tokens</span>
-                        <span className="font-mono">#{message.metadata.session_id.slice(0, 6)}</span>
+                    )}
+                    
+                    {/* Compact metadata display - only show at end of conversation */}
+                    {message.metadata && message.id === messages[messages.length - 1]?.id && (
+                      <div className="mt-3 pt-3 border-t border-border/20">
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <span>${message.metadata.cost.toFixed(4)}</span>
+                          <span>{message.metadata.duration}ms</span>
+                          <span>{message.metadata.tokens} tokens</span>
+                          <span className="font-mono">#{message.metadata.session_id.slice(0, 6)}</span>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  
-                  {/* Streaming indicator */}
-                  {message.isStreaming && (
-                    <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      <span>Streaming...</span>
-                    </div>
-                  )}
-                </MessageContent>
-                
-                <MessageAvatar
-                  src={message.role === 'user' ? '/user-avatar.png' : '/bot-avatar.png'}
-                  name={message.role === 'user' ? 'User' : agent?.name || 'Agent'}
-                />
+                    )}
+                    
+                    {/* Streaming indicator */}
+                    {message.isStreaming && (
+                      <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Streaming...</span>
+                      </div>
+                    )}
+                  </MessageContent>
+                )}
               </Message>
             ))}
             
@@ -397,10 +433,6 @@ export default function Chat() {
                     <span>Agent is thinking...</span>
                   </div>
                 </MessageContent>
-                <MessageAvatar
-                  src="/bot-avatar.png"
-                  name={agent?.name || 'Agent'}
-                />
               </Message>
             )}
           </ConversationContent>
