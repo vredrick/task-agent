@@ -5,6 +5,7 @@ import { ChatWebSocket, type ChatMessage as WSMessage } from '@/lib/websocket'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Message, MessageContent, MessageAvatar } from '@/components/ai-elements/message'
 import { Tool, ToolHeader, ToolContent, ToolInput } from '@/components/ai-elements/tool'
+import { ToolOutputEnhanced } from '@/components/ai-elements/ToolOutputEnhanced'
 import { CodeBlock, CodeBlockCopyButton } from '@/components/ai-elements/code-block'
 import { Loader } from '@/components/ai-elements/loader'
 import { StreamingMessage } from '@/components/StreamingMessage'
@@ -22,7 +23,9 @@ interface ChatMessage {
   toolUse?: {
     name: string
     input?: any
+    output?: any
     state?: 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
+    tool_id?: string
   }
   isStreaming?: boolean
   metadata?: {
@@ -46,6 +49,9 @@ export default function Chat() {
   const [pendingResponse, setPendingResponse] = useState('')
   const [sessionId] = useState(() => crypto.randomUUID())
   const wsRef = useRef<ChatWebSocket | null>(null)
+  const [pendingTools, setPendingTools] = useState<any[]>([]) // Queue for tools waiting for text to finish
+  const [isTextStreaming, setIsTextStreaming] = useState(false) // Track if text is currently streaming
+  const [displayedTextLength, setDisplayedTextLength] = useState(0) // Track how much text has been displayed
 
   // AI Elements handles scrolling automatically
 
@@ -79,50 +85,176 @@ export default function Chat() {
             console.log('WebSocket message received:', message)
             if (message.type === 'text' && message.content?.text) {
               console.log('Adding text to currentResponse:', message.content.text)
-              setCurrentResponse(prev => {
-                // Concatenate text chunks directly - backend handles formatting
-                const newResponse = prev + message.content.text
-                console.log('Updated currentResponse:', newResponse)
-                setPendingResponse(newResponse) // Store the full response for metadata handling
-                return newResponse
-              })
+              
+              // If we have a current message ID, update that message directly
+              if (currentMessageId) {
+                setMessages(prev => {
+                  const existingIndex = prev.findIndex(msg => msg.id === currentMessageId)
+                  if (existingIndex >= 0) {
+                    // Update existing message
+                    const updated = [...prev]
+                    updated[existingIndex] = {
+                      ...updated[existingIndex],
+                      content: updated[existingIndex].content + message.content.text,
+                      isStreaming: true
+                    }
+                    return updated
+                  } else {
+                    // Create new message
+                    return [...prev, {
+                      id: currentMessageId,
+                      role: 'assistant',
+                      content: message.content.text,
+                      isStreaming: true
+                    }]
+                  }
+                })
+              } else {
+                // No message ID yet, accumulate in currentResponse
+                setCurrentResponse(prev => prev + message.content.text)
+              }
+              
+              setPendingResponse(prev => prev + message.content.text) // Store for metadata
             } else if (message.type === 'text') {
               console.log('Text message but no content.text:', message)
             } else if (message.type === 'tool_use') {
-              // Tool use received - finalize any current text and create tool message
+              // Tool use received - finalize any current text and queue tool
               console.log('Tool use received:', message)
               
-              // If there's current text, finalize it as a message first
-              setCurrentResponse(currentText => {
-                if (currentText) {
-                  const textMessageId = currentMessageId || crypto.randomUUID()
-                  setMessages(prev => [...prev, {
-                    id: textMessageId,
-                    role: 'assistant',
-                    content: currentText,
-                    isStreaming: true  // Mark as streaming for animation
-                  }])
-                  setPendingResponse('') // Clear pending response
-                }
-                return '' // Clear current response
-              })
-              
-              // Reset message ID for next text chunk
+              // Clear states since text has already been added to messages
+              setCurrentResponse('')
+              setPendingResponse('')
               setCurrentMessageId(null)
+              setIsTextStreaming(true) // Mark that text is streaming
               
-              // Add tool use as a separate message
+              // Create tool data
               const toolUseData = {
                 name: message.name || 'Unknown',
                 input: message.input,
-                state: 'input-available' as const
+                state: 'input-available' as const,
+                tool_id: message.id || crypto.randomUUID()
               }
               
-              setMessages(prev => [...prev, {
+              // Queue the tool instead of adding it immediately
+              setPendingTools(prev => [...prev, {
                 id: crypto.randomUUID(),
                 role: 'assistant',
                 content: '',
                 toolUse: toolUseData
               }])
+            } else if (message.type === 'tool_result') {
+              // Handle tool result - update the corresponding tool message
+              console.log('Tool result received:', message)
+              
+              // First check if the tool is in pending tools
+              setPendingTools(prev => {
+                const pendingIndex = prev.findIndex(msg => 
+                  msg.toolUse && msg.toolUse.tool_id === message.tool_use_id
+                )
+                
+                if (pendingIndex >= 0) {
+                  // Update the pending tool with the result
+                  const updatedTool = {
+                    ...prev[pendingIndex],
+                    toolUse: {
+                      ...prev[pendingIndex].toolUse!,
+                      output: message.output,
+                      state: message.is_error ? 'output-error' : 'output-available' as const
+                    }
+                  }
+                  
+                  return [
+                    ...prev.slice(0, pendingIndex),
+                    updatedTool,
+                    ...prev.slice(pendingIndex + 1)
+                  ]
+                }
+                
+                return prev
+              })
+              
+              // Also check if the tool is already in messages
+              setMessages(prev => {
+                const toolMessageIndex = prev.findIndex(msg => 
+                  msg.toolUse && msg.toolUse.tool_id === message.tool_use_id
+                )
+                
+                if (toolMessageIndex >= 0) {
+                  const toolMessage = prev[toolMessageIndex]
+                  const updatedToolMessage = {
+                    ...toolMessage,
+                    toolUse: {
+                      ...toolMessage.toolUse!,
+                      output: message.output,
+                      state: message.is_error ? 'output-error' : 'output-available' as const
+                    }
+                  }
+                  
+                  return [
+                    ...prev.slice(0, toolMessageIndex),
+                    updatedToolMessage,
+                    ...prev.slice(toolMessageIndex + 1)
+                  ]
+                }
+                
+                return prev
+              })
+            } else if (message.type === 'tool_start') {
+              // Handle tool start - update state to running
+              console.log('Tool start received:', message)
+              
+              setMessages(prev => {
+                const toolMessageIndex = prev.findIndex(msg => 
+                  msg.toolUse && msg.toolUse.tool_id === message.id
+                )
+                
+                if (toolMessageIndex >= 0) {
+                  const toolMessage = prev[toolMessageIndex]
+                  const updatedToolMessage = {
+                    ...toolMessage,
+                    toolUse: {
+                      ...toolMessage.toolUse!,
+                      state: 'input-available' as const
+                    }
+                  }
+                  
+                  return [
+                    ...prev.slice(0, toolMessageIndex),
+                    updatedToolMessage,
+                    ...prev.slice(toolMessageIndex + 1)
+                  ]
+                }
+                
+                return prev
+              })
+            } else if (message.type === 'tool_complete') {
+              // Handle tool complete - finalize state
+              console.log('Tool complete received:', message)
+              
+              setMessages(prev => {
+                const toolMessageIndex = prev.findIndex(msg => 
+                  msg.toolUse && msg.toolUse.tool_id === message.id
+                )
+                
+                if (toolMessageIndex >= 0) {
+                  const toolMessage = prev[toolMessageIndex]
+                  const updatedToolMessage = {
+                    ...toolMessage,
+                    toolUse: {
+                      ...toolMessage.toolUse!,
+                      state: message.success ? 'output-available' : 'output-error'
+                    }
+                  }
+                  
+                  return [
+                    ...prev.slice(0, toolMessageIndex),
+                    updatedToolMessage,
+                    ...prev.slice(toolMessageIndex + 1)
+                  ]
+                }
+                
+                return prev
+              })
             } else if (message.type === 'metadata') {
               // Handle SDK metadata
               const metadata = message.data
@@ -215,6 +347,45 @@ export default function Chat() {
     }
   }, [agentName, sessionId])
 
+  // Effect to add pending tools after text streaming completes
+  useEffect(() => {
+    if (!isTextStreaming && pendingTools.length > 0) {
+      // Add a small delay to ensure text animation completes
+      const timer = setTimeout(() => {
+        // Add all pending tools to messages
+        setMessages(prev => [...prev, ...pendingTools])
+        setPendingTools([]) // Clear the queue
+      }, 500) // 500ms delay to ensure text streaming visually completes
+      
+      return () => clearTimeout(timer)
+    }
+  }, [isTextStreaming, pendingTools])
+
+  // Effect to mark text streaming as complete when messages finish animating
+  useEffect(() => {
+    // Find messages that are marked as streaming
+    const streamingMessage = messages.find(msg => msg.isStreaming && msg.role === 'assistant')
+    
+    if (streamingMessage && isTextStreaming) {
+      // Set a timer to mark streaming as complete
+      // This should be slightly longer than the total animation time
+      // With 25ms per word and average 5 chars per word, that's ~5ms per char
+      const wordsInContent = streamingMessage.content.split(' ').length
+      const animationTime = Math.max(1000, wordsInContent * 25) // 25ms per word
+      const timer = setTimeout(() => {
+        setIsTextStreaming(false)
+        // Also mark the message as no longer streaming
+        setMessages(prev => prev.map(msg => 
+          msg.id === streamingMessage.id 
+            ? { ...msg, isStreaming: false }
+            : msg
+        ))
+      }, animationTime)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [messages, isTextStreaming])
+
   const handleSend = async () => {
     console.log('handleSend called with:', { input, agentName, loading, wsConnected: !!wsRef.current })
     
@@ -259,9 +430,10 @@ export default function Chat() {
     }
   }
 
-  // Stream current response as a temporary message
-  const streamingMessage: ChatMessage | null = currentResponse ? {
-    id: currentMessageId || 'streaming',
+  // Stream current response as a temporary message only if we don't have a currentMessageId
+  // (currentMessageId means we're updating an existing message directly)
+  const streamingMessage: ChatMessage | null = (currentResponse && !currentMessageId) ? {
+    id: 'streaming',
     role: 'assistant',
     content: currentResponse,
     isStreaming: true
@@ -373,6 +545,14 @@ export default function Chat() {
                         <ToolContent>
                           {message.toolUse.input && (
                             <ToolInput input={message.toolUse.input} />
+                          )}
+                          {message.toolUse.output && (
+                            <ToolOutputEnhanced 
+                              output={typeof message.toolUse.output === 'string' 
+                                ? message.toolUse.output 
+                                : JSON.stringify(message.toolUse.output, null, 2)}
+                              errorText={message.toolUse.state === 'output-error' ? 'Tool execution failed' : undefined}
+                            />
                           )}
                         </ToolContent>
                       </Tool>

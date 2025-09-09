@@ -107,6 +107,64 @@ class SDKMessageParser:
             "role": "assistant"
         }
     
+    def parse_user_message(self, message) -> Dict[str, Any]:
+        """Parse a user message which may contain tool results.
+        
+        Args:
+            message: The SDK user message object
+            
+        Returns:
+            Structured message dict or None if just user text
+        """
+        blocks = []
+        has_tool_results = False
+        
+        logger.info(f"Parsing UserMessage with content: {hasattr(message, 'content')}, content type: {type(getattr(message, 'content', None))}")
+        
+        # Check for content blocks (tool results come as blocks)
+        if hasattr(message, 'content'):
+            content = message.content
+            # Ensure content is iterable
+            if not isinstance(content, list):
+                logger.debug(f"UserMessage content is not a list: {type(content)}")
+                if isinstance(content, str):
+                    # Just text content, no tool results
+                    return None
+                # Try to make it a list
+                content = [content] if content else []
+            
+            for block in content:
+                block_type = type(block).__name__
+                logger.info(f"UserMessage block type: {block_type}")
+                
+                # Handle tool result blocks in UserMessage
+                if block_type == 'ToolResultBlock' or hasattr(block, 'tool_use_id'):
+                    has_tool_results = True
+                    result_block = ToolResultBlock(
+                        tool_use_id=getattr(block, 'tool_use_id', ''),
+                        output=getattr(block, 'content', getattr(block, 'output', '')),
+                        is_error=getattr(block, 'is_error', False)
+                    )
+                    blocks.append(result_block.to_dict())
+                    logger.info(f"Found tool result in UserMessage: {result_block.tool_use_id}")
+                
+                # Handle text blocks
+                elif hasattr(block, 'text'):
+                    text_block = TextBlock(content=block.text)
+                    blocks.append(text_block.to_dict())
+        
+        # Only return if we found tool results, otherwise skip
+        if has_tool_results:
+            return {
+                "type": "user_message",
+                "blocks": blocks,
+                "role": "user"
+            }
+        else:
+            # Just a regular user echo, skip it
+            logger.debug("UserMessage contains no tool results, skipping")
+            return None
+    
     def parse_system_message(self, message) -> Dict[str, Any]:
         """Parse a system message (tool results, notifications).
         
@@ -118,10 +176,13 @@ class SDKMessageParser:
         """
         blocks = []
         
+        logger.info(f"Parsing system message with content: {hasattr(message, 'content')}")
+        
         # Check for tool result content
         if hasattr(message, 'content'):
             for block in message.content:
                 block_type = type(block).__name__
+                logger.info(f"System message block type: {block_type}")
                 
                 # Handle tool result blocks
                 if block_type == 'ToolResultBlock' or hasattr(block, 'tool_use_id'):
@@ -131,7 +192,7 @@ class SDKMessageParser:
                         is_error=getattr(block, 'is_error', False)
                     )
                     blocks.append(result_block.to_dict())
-                    logger.debug(f"Parsed tool result block: {result_block.tool_use_id}")
+                    logger.info(f"Parsed tool result block: {result_block.tool_use_id}")
                 
                 # Handle text in system messages
                 elif hasattr(block, 'text'):
@@ -191,18 +252,20 @@ class SDKMessageParser:
             Structured message dict or None if unknown type
         """
         message_type = type(message).__name__
+        logger.debug(f"Parsing message type: {message_type}, has role: {hasattr(message, 'role')}, role value: {getattr(message, 'role', 'N/A')}")
         
         try:
             if message_type == "AssistantMessage" or hasattr(message, 'role') and getattr(message, 'role') == 'assistant':
                 return self.parse_assistant_message(message)
             elif message_type == "SystemMessage" or hasattr(message, 'role') and getattr(message, 'role') == 'system':
+                logger.info(f"Detected SystemMessage, parsing tool results...")
                 return self.parse_system_message(message)
             elif message_type == "ResultMessage" or hasattr(message, 'session_id'):
                 return self.parse_result_message(message)
             elif message_type == "UserMessage" or hasattr(message, 'role') and getattr(message, 'role') == 'user':
-                # UserMessage is typically just echoing user input - we can skip it
-                logger.debug(f"Skipping UserMessage (echo of user input)")
-                return None
+                # UserMessage can contain tool results!
+                logger.debug(f"Processing UserMessage - checking for tool results")
+                return self.parse_user_message(message)
             else:
                 logger.warning(f"Unknown message type: {message_type}")
                 return None
@@ -279,6 +342,38 @@ class SDKMessageParser:
             "tool_use_id": tool_use_id,
             "output": output,
             "is_error": is_error
+        })
+    
+    def create_tool_start_event(self, name: str, tool_id: str) -> str:
+        """Create a tool start event to indicate tool execution beginning.
+        
+        Args:
+            name: Tool name
+            tool_id: Tool invocation ID
+            
+        Returns:
+            JSON-formatted tool start event
+        """
+        return json.dumps({
+            "type": "tool_start",
+            "name": name,
+            "id": tool_id
+        })
+    
+    def create_tool_complete_event(self, tool_id: str, success: bool = True) -> str:
+        """Create a tool complete event to indicate tool execution finished.
+        
+        Args:
+            tool_id: Tool invocation ID
+            success: Whether the tool completed successfully
+            
+        Returns:
+            JSON-formatted tool complete event
+        """
+        return json.dumps({
+            "type": "tool_complete",
+            "id": tool_id,
+            "success": success
         })
     
     def create_metadata_event(self, metadata: Dict[str, Any]) -> str:

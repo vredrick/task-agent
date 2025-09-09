@@ -41,6 +41,20 @@ export default {
           foreground: "hsl(var(--card-foreground))",
         },
       },
+      keyframes: {
+        "accordion-down": {
+          from: { height: "0", opacity: "0" },
+          to: { height: "var(--radix-collapsible-content-height)", opacity: "1" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-collapsible-content-height)", opacity: "1" },
+          to: { height: "0", opacity: "0" },
+        },
+      },
+      animation: {
+        "accordion-down": "accordion-down 0.2s cubic-bezier(0, 0.2, 0.5, 1.3)",
+        "accordion-up": "accordion-up 0.2s cubic-bezier(0, 0.2, 0.5, 1.3)",
+      },
     },
   },
   plugins: [],

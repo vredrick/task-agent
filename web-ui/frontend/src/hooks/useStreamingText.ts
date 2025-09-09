@@ -5,6 +5,8 @@ interface UseStreamingTextOptions {
   wordDelay?: number
   // Whether to stream character by character instead of word by word
   characterMode?: boolean
+  // Buffer mode for smoother chunk-based streaming
+  bufferMode?: boolean
   // Callback when streaming completes
   onComplete?: () => void
 }
@@ -17,6 +19,7 @@ export function useStreamingText(
   const {
     wordDelay = 30, // 30ms between words for smooth reading
     characterMode = false,
+    bufferMode = false,
     onComplete
   } = options
 
@@ -61,23 +64,35 @@ export function useStreamingText(
 
       if (currentLength < targetText.length) {
         let nextIndex = currentLength
+        
+        // Calculate how far behind we are
+        const remainingChars = targetText.length - currentLength
+        const isFarBehind = remainingChars > 200
+        
+        // Speed up if we're far behind
+        const wordsPerFrame = isFarBehind ? 5 : (remainingChars > 100 ? 3 : 1)
 
         if (characterMode) {
           // Character by character
-          nextIndex = currentLength + 1
+          nextIndex = Math.min(currentLength + wordsPerFrame, targetText.length)
         } else {
-          // Word by word - find the next word boundary
-          let foundSpace = false
-          for (let i = currentLength + 1; i <= targetText.length; i++) {
-            if (i === targetText.length || targetText[i] === ' ' || targetText[i] === '\n') {
-              nextIndex = i
-              foundSpace = true
-              break
+          // Word by word - process multiple words if behind
+          let wordsAdded = 0
+          let searchIndex = currentLength + 1
+          
+          while (wordsAdded < wordsPerFrame && searchIndex <= targetText.length) {
+            if (searchIndex === targetText.length || targetText[searchIndex] === ' ' || targetText[searchIndex] === '\n') {
+              nextIndex = searchIndex
+              wordsAdded++
+              searchIndex++
+            } else {
+              searchIndex++
             }
           }
-          // If no space found, just add one character (for long words)
-          if (!foundSpace) {
-            nextIndex = Math.min(currentLength + 1, targetText.length)
+          
+          // If we didn't find any spaces, just move forward
+          if (nextIndex === currentLength) {
+            nextIndex = Math.min(currentLength + wordsPerFrame, targetText.length)
           }
         }
 

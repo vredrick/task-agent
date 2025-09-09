@@ -11,12 +11,15 @@ interface StreamingMessageProps {
 
 export function StreamingMessage({ content, isStreaming = false, className }: StreamingMessageProps) {
   // Use the streaming hook to animate text
+  // Since tools now wait for text to complete, we can use a more
+  // comfortable reading speed
   const { displayedText, isAnimating } = useStreamingText(
     content,
     isStreaming,
     {
-      wordDelay: 40, // Slower for more noticeable streaming effect
-      characterMode: false // Word by word looks more natural
+      wordDelay: 40, // Slightly slower for more comfortable reading
+      characterMode: false, // Word by word
+      bufferMode: true // Smooth chunk boundaries
     }
   )
 

@@ -144,10 +144,25 @@ class SDKExecutor:
                                             tool_id=block.get("id")
                                         )
                             
-                            elif parsed_message.get("type") == "system_message":
-                                # Stream system message blocks (tool results)
+                            elif parsed_message.get("type") == "user_message":
+                                # UserMessage contains tool results!
+                                logger.debug(f"Processing user message with {len(parsed_message.get('blocks', []))} blocks")
                                 for block in parsed_message.get("blocks", []):
                                     if block["type"] == "tool_result":
+                                        logger.info(f"Sending tool_result event from UserMessage for tool_use_id: {block['tool_use_id'][:10]}...")
+                                        yield parser.create_tool_result_event(
+                                            tool_use_id=block["tool_use_id"],
+                                            output=block["output"],
+                                            is_error=block["is_error"]
+                                        )
+                            
+                            elif parsed_message.get("type") == "system_message":
+                                # Stream system message blocks (for other system notifications)
+                                logger.debug(f"Processing system message with {len(parsed_message.get('blocks', []))} blocks")
+                                for block in parsed_message.get("blocks", []):
+                                    logger.debug(f"Processing block type: {block.get('type')}")
+                                    if block["type"] == "tool_result":
+                                        logger.info(f"Sending tool_result event for tool_use_id: {block['tool_use_id'][:10]}...")
                                         yield parser.create_tool_result_event(
                                             tool_use_id=block["tool_use_id"],
                                             output=block["output"],
