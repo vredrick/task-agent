@@ -2,17 +2,32 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api, type Agent } from '@/lib/api'
 import { ChatWebSocket, type ChatMessage as WSMessage } from '@/lib/websocket'
-import ChatMessage from '@/components/ChatMessage'
+import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
+import { Message, MessageContent, MessageAvatar } from '@/components/ai-elements/message'
+import { Tool, ToolHeader, ToolContent, ToolInput } from '@/components/ai-elements/tool'
+import { CodeBlock } from '@/components/ai-elements/code-block'
 import AuthStatus from '@/components/AuthStatus'
-import { ArrowLeft, Send, RotateCcw, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ArrowLeft, Send, RotateCcw, Loader2, User, Bot, Paperclip, ChevronDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-interface Message {
+interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   toolUse?: {
     name: string
     input?: any
+    state?: 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
+  }
+  isStreaming?: boolean
+  metadata?: {
+    cost: number
+    duration: number
+    tokens: number
+    session_id: string
   }
 }
 
@@ -20,19 +35,17 @@ export default function Chat() {
   const { agentName } = useParams<{ agentName: string }>()
   const navigate = useNavigate()
   const [agent, setAgent] = useState<Agent | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [currentResponse, setCurrentResponse] = useState('')
+  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
+  const [pendingResponse, setPendingResponse] = useState('')
   const [sessionId] = useState(() => crypto.randomUUID())
   const wsRef = useRef<ChatWebSocket | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, currentResponse])
+  // AI Elements handles scrolling automatically
 
   // Load agent info
   useEffect(() => {
@@ -61,38 +74,114 @@ export default function Chat() {
         const ws = new ChatWebSocket(
           sessionId,
           (message: WSMessage) => {
+            console.log('WebSocket message received:', message)
             if (message.type === 'text' && message.content?.text) {
-              setCurrentResponse(prev => prev + message.content.text)
+              console.log('Adding text to currentResponse:', message.content.text)
+              setCurrentResponse(prev => {
+                // Concatenate text chunks directly - backend handles formatting
+                const newResponse = prev + message.content.text
+                console.log('Updated currentResponse:', newResponse)
+                setPendingResponse(newResponse) // Store the full response for metadata handling
+                return newResponse
+              })
+            } else if (message.type === 'text') {
+              console.log('Text message but no content.text:', message)
             } else if (message.type === 'tool_use') {
-              // Handle tool use display
-              const toolMessage: Message = {
+              // Tool use received - finalize any current text and create tool message
+              console.log('Tool use received:', message)
+              
+              // If there's current text, finalize it as a message first
+              setCurrentResponse(currentText => {
+                if (currentText) {
+                  const textMessageId = currentMessageId || crypto.randomUUID()
+                  setMessages(prev => [...prev, {
+                    id: textMessageId,
+                    role: 'assistant',
+                    content: currentText
+                  }])
+                  setPendingResponse('') // Clear pending response
+                }
+                return '' // Clear current response
+              })
+              
+              // Reset message ID for next text chunk
+              setCurrentMessageId(null)
+              
+              // Add tool use as a separate message
+              const toolUseData = {
+                name: message.name || 'Unknown',
+                input: message.input,
+                state: 'running' as const
+              }
+              
+              setMessages(prev => [...prev, {
                 id: crypto.randomUUID(),
                 role: 'assistant',
                 content: '',
-                toolUse: {
-                  name: message.name || 'Unknown',
-                  input: message.input
+                toolUse: toolUseData
+              }])
+            } else if (message.type === 'metadata') {
+              // Handle SDK metadata
+              const metadata = message.data
+              console.log('Metadata received:', metadata)
+              
+              // Finalize any remaining text as a message if exists
+              setCurrentResponse(currentResp => {
+                if (currentResp) {
+                  // There's text that hasn't been finalized yet
+                  const textMessageId = currentMessageId || crypto.randomUUID()
+                  setMessages(prev => [...prev, {
+                    id: textMessageId,
+                    role: 'assistant',
+                    content: currentResp
+                  }])
                 }
-              }
-              setMessages(prev => [...prev, toolMessage])
+                return '' // Clear current response
+              })
+              
+              // Add metadata as a separate message (just metadata, no content)
+              // The metadata will be displayed on the last assistant message
+              setMessages(prev => {
+                // Find the last assistant message and add metadata to it
+                if (prev.length > 0) {
+                  const lastMessageIndex = prev.length - 1
+                  const lastMessage = prev[lastMessageIndex]
+                  
+                  // Only add metadata to assistant messages
+                  if (lastMessage.role === 'assistant') {
+                    const updatedMessage = {
+                      ...lastMessage,
+                      metadata: {
+                        cost: metadata.cost || 0,
+                        duration: metadata.duration || 0,
+                        tokens: (metadata.usage?.input_tokens || 0) + (metadata.usage?.output_tokens || 0),
+                        session_id: metadata.session_id || ''
+                      }
+                    }
+                    
+                    const updated = [
+                      ...prev.slice(0, lastMessageIndex),
+                      updatedMessage
+                    ]
+                    console.log('Added metadata to last message:', updatedMessage)
+                    return updated
+                  }
+                }
+                return prev
+              })
+              
+              // Clear streaming state
+              setCurrentMessageId(null)
+              setPendingResponse('')
+              setLoading(false)
             } else if (message.type === 'error') {
               console.error('Error from agent:', message.content)
               setCurrentResponse(prev => prev + '\n[Error: ' + message.content + ']')
-              setLoading(false)  // Stop loading on error
-            } else if (message.session_id || message.conversation_id) {
-              // Session info usually comes at the end of the response
-              console.log('Session established:', message.session_id || message.conversation_id)
-              // Delay slightly to ensure all text is processed
-              setTimeout(() => {
-                setLoading(false)
-              }, 100)
-            } else if (message.type === 'usage') {
-              // Usage info indicates completion
-              console.log('Usage:', message.usage)
               setLoading(false)
+            } else if (message.session_id || message.conversation_id) {
+              console.log('Session established:', message.session_id || message.conversation_id)
+              setTimeout(() => setLoading(false), 100)
             } else if (message.type === 'complete') {
-              // Explicit completion signal
-              console.log('Response complete')
               setLoading(false)
             }
           },
@@ -123,41 +212,65 @@ export default function Chat() {
   }, [agentName, sessionId])
 
   const handleSend = async () => {
-    if (!input.trim() || !wsRef.current || !agentName || loading) return
+    console.log('handleSend called with:', { input, agentName, loading, wsConnected: !!wsRef.current })
+    
+    if (!input.trim() || !wsRef.current || !agentName || loading) {
+      console.log('handleSend early return:', {
+        hasInput: !!input.trim(),
+        hasWs: !!wsRef.current,
+        hasAgent: !!agentName,
+        loading
+      })
+      return
+    }
 
-    const userMessage: Message = {
+    const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content: input
     }
 
+    const assistantMessageId = crypto.randomUUID()
+    
+    console.log('Adding user message to chat:', userMessage)
     setMessages(prev => [...prev, userMessage])
     setInput('')
     setLoading(true)
     setCurrentResponse('')
+    setPendingResponse('') // Clear any previous pending response
+    setCurrentMessageId(assistantMessageId)
+    
+    // Reset textarea and container height after sending
+    const textarea = document.querySelector('textarea')
+    if (textarea) {
+      textarea.style.height = '38px'
+      const container = textarea.closest('.relative')
+      if (container instanceof HTMLElement) {
+        container.style.minHeight = '76px'
+      }
+    }
 
     try {
+      console.log('Sending WebSocket message:', { agentName, input })
       wsRef.current.sendMessage(agentName, input)
-      // The response will be handled by the WebSocket message handler
-      // We'll detect completion when we stop receiving messages
     } catch (error) {
       console.error('Failed to send message:', error)
       setLoading(false)
     }
   }
 
-  // Monitor currentResponse and add to messages when complete
-  useEffect(() => {
-    if (!loading && currentResponse) {
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: currentResponse
-      }
-      setMessages(prev => [...prev, assistantMessage])
-      setCurrentResponse('')
-    }
-  }, [loading, currentResponse])
+  // Stream current response as a temporary message
+  const streamingMessage: ChatMessage | null = currentResponse ? {
+    id: currentMessageId || 'streaming',
+    role: 'assistant',
+    content: currentResponse,
+    isStreaming: true
+  } : null
+
+  // Debug logging for streamingMessage and messages
+  console.log('Streaming message state:', { currentResponse, streamingMessage })
+  console.log('Messages array:', messages)
+  console.log('Combined messages for rendering:', [...messages, ...(streamingMessage ? [streamingMessage] : [])])
 
   const handleReset = () => {
     setMessages([])
@@ -175,98 +288,214 @@ export default function Chat() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <button
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      {/* Compact Header */}
+      <header className="bg-card border-b border-border px-4 py-3">
+        <div className="max-w-4xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => navigate('/')}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              className="flex items-center gap-2 h-8 px-2"
             >
-              <ArrowLeft className="w-5 h-5" />
-              Back to Agents
-            </button>
+              <ArrowLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Back</span>
+            </Button>
             
             {agent && (
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">{agent.name}</h1>
-                <p className="text-sm text-gray-600">{agent.description}</p>
+              <div className="flex flex-col">
+                <h1 className="text-base font-medium leading-tight">{agent.name}</h1>
+                <p className="text-xs text-muted-foreground leading-tight">{agent.description}</p>
               </div>
             )}
           </div>
           
-          <div className="flex items-center gap-4">
-            <button
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={handleReset}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
+              className="flex items-center gap-1 h-7 px-2 text-xs"
             >
-              <RotateCcw className="w-4 h-4" />
-              Reset
-            </button>
-            <AuthStatus />
+              <RotateCcw className="w-3 h-3" />
+              <span className="hidden sm:inline">Reset</span>
+            </Button>
+            {/* Compact Authentication Status */}
+            <div className="text-xs px-2 py-1 bg-primary/10 rounded-md text-primary">
+              Claude authenticated
+            </div>
           </div>
         </div>
       </header>
 
       {/* Chat Area */}
-      <div className="flex-1 overflow-hidden flex flex-col max-w-4xl mx-auto w-full">
-        <div className="flex-1 overflow-y-auto">
-          {messages.length === 0 && !currentResponse && (
-            <div className="flex items-center justify-center h-full text-gray-500 p-8">
-              <p>Start a conversation with {agent?.name || 'the agent'}</p>
-            </div>
-          )}
+      <div className="flex-1 overflow-hidden flex flex-col relative">
+        <Conversation className="flex-1 max-w-3xl mx-auto w-full px-4 pb-32">
+          <ConversationContent>
+            {messages.length === 0 && !streamingMessage && (
+              <div className="flex items-center justify-center h-full text-muted-foreground p-8">
+                <p>Start a conversation with {agent?.name || 'the agent'}</p>
+              </div>
+            )}
+            
+            {[...messages, ...(streamingMessage ? [streamingMessage] : [])].map(message => (
+              <Message key={message.id} from={message.role}>
+                <MessageContent role={message.role}>
+                  {message.content}
+                  
+                  {/* Tool usage with minimal Claude Desktop styling */}
+                  {message.toolUse && (
+                    <div className="mt-2 rounded-md border border-border/40 bg-muted/10 overflow-hidden">
+                      <Tool>
+                        <ToolHeader
+                          type={message.toolUse.name}
+                          state={message.toolUse.state || 'running'}
+                        />
+                        <ToolContent>
+                          {message.toolUse.input && (
+                            <ToolInput input={message.toolUse.input} />
+                          )}
+                        </ToolContent>
+                      </Tool>
+                    </div>
+                  )}
+                  
+                  {/* Compact metadata display - only show at end of conversation */}
+                  {message.metadata && message.id === messages[messages.length - 1]?.id && (
+                    <div className="mt-3 pt-3 border-t border-border/20">
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span>${message.metadata.cost.toFixed(4)}</span>
+                        <span>{message.metadata.duration}ms</span>
+                        <span>{message.metadata.tokens} tokens</span>
+                        <span className="font-mono">#{message.metadata.session_id.slice(0, 6)}</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Streaming indicator */}
+                  {message.isStreaming && (
+                    <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Streaming...</span>
+                    </div>
+                  )}
+                </MessageContent>
+                
+                <MessageAvatar
+                  src={message.role === 'user' ? '/user-avatar.png' : '/bot-avatar.png'}
+                  name={message.role === 'user' ? 'User' : agent?.name || 'Agent'}
+                />
+              </Message>
+            ))}
+            
+            {loading && !streamingMessage && (
+              <Message from="assistant">
+                <MessageContent role="assistant">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Agent is thinking...</span>
+                  </div>
+                </MessageContent>
+                <MessageAvatar
+                  src="/bot-avatar.png"
+                  name={agent?.name || 'Agent'}
+                />
+              </Message>
+            )}
+          </ConversationContent>
           
-          {messages.map(message => (
-            <ChatMessage
-              key={message.id}
-              role={message.role}
-              content={message.content}
-              toolUse={message.toolUse}
-            />
-          ))}
-          
-          {currentResponse && (
-            <ChatMessage
-              role="assistant"
-              content={currentResponse}
-            />
-          )}
-          
-          {loading && !currentResponse && (
-            <div className="flex items-center gap-2 p-4 text-gray-600">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Agent is thinking...</span>
-            </div>
-          )}
-          
-          <div ref={messagesEndRef} />
-        </div>
+          <ConversationScrollButton />
+        </Conversation>
 
-        {/* Input Area */}
-        <div className="border-t border-gray-200 bg-white p-4">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={`Message ${agent?.name || 'Agent'}...`}
-              disabled={loading || connecting || !wsRef.current}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            />
-            <button
-              onClick={handleSend}
-              disabled={loading || connecting || !wsRef.current || !input.trim()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Send className="w-5 h-5" />
-              )}
-            </button>
+        {/* Claude Desktop Style Input Area - Fixed Position */}
+        <div className="fixed bottom-0 left-0 right-0 p-2 z-50 bg-gradient-to-t from-background via-background/95 to-transparent">
+          <div className="max-w-2xl mx-auto">
+            {/* Single input container with Claude styling - expands with content */}
+            <div className="relative bg-background border border-input rounded-2xl p-4 min-h-[76px] transition-all duration-200">
+              {/* Main Input Field - Full width on top */}
+              <div className="flex flex-col h-full">
+                <Textarea
+                  value={input}
+                  onChange={(e) => {
+                    setInput(e.target.value)
+                    // Auto-resize textarea and container
+                    const target = e.target
+                    target.style.height = 'auto'
+                    const newHeight = Math.min(target.scrollHeight, 192) // max 8 lines
+                    target.style.height = newHeight + 'px'
+                    
+                    // Expand container based on textarea height
+                    const container = target.closest('.relative') as HTMLElement
+                    if (container) {
+                      // Base height is 76px, expand as textarea grows
+                      const baseHeight = 76
+                      const textareaBaseHeight = 38
+                      const expansion = Math.max(0, newHeight - textareaBaseHeight)
+                      container.style.minHeight = (baseHeight + expansion) + 'px'
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleSend()
+                    }
+                  }}
+                  placeholder={`Reply to ${agent?.name || 'Agent'}...`}
+                  disabled={loading || connecting || !wsRef.current}
+                  className={cn(
+                    "flex-1 min-h-[38px] max-h-[192px] resize-none border-0 bg-transparent p-0",
+                    "focus-visible:ring-0 focus-visible:ring-offset-0",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
+                    "text-sm leading-relaxed placeholder:text-muted-foreground",
+                    "overflow-y-auto"
+                  )}
+                  style={{ height: '38px' }}
+                  rows={1}
+                />
+                
+                {/* Bottom Controls Row */}
+                <div className="flex items-center justify-between pt-2 mt-2">
+                  {/* Upload Button - Bottom Left */}
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-8 w-8 p-0" 
+                    disabled
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </Button>
+                  
+                  {/* Right Controls - Model Selection and Send */}
+                  <div className="flex items-center gap-2">
+                    {/* Model Selection */}
+                    <Select disabled>
+                      <SelectTrigger className="w-24 h-7 text-xs border-0 bg-transparent">
+                        <SelectValue placeholder="3.5" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="claude-3.5">3.5</SelectItem>
+                        <SelectItem value="claude-3" disabled>3.0</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    
+                    {/* Send Button */}
+                    <Button
+                      onClick={handleSend}
+                      disabled={loading || connecting || !wsRef.current || !input.trim()}
+                      size="sm"
+                      className="h-8 w-8 p-0 bg-primary hover:bg-primary/90"
+                    >
+                      {loading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

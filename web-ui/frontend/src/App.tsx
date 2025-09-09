@@ -4,7 +4,7 @@ import Chat from './pages/Chat'
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="dark min-h-screen bg-background text-foreground">
       <Routes>
         <Route path="/" element={<AgentSelection />} />
         <Route path="/chat/:agentName" element={<Chat />} />

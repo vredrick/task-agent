@@ -24,30 +24,31 @@ export default function AgentSelection() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">Task Agent Web UI</h1>
-          <AuthStatus />
+    <div className="min-h-screen bg-background text-foreground">
+      {/* Compact Header */}
+      <header className="bg-card border-b border-border px-4 py-3">
+        <div className="max-w-4xl mx-auto flex justify-between items-center">
+          <div className="flex flex-col">
+            <h1 className="text-base font-medium leading-tight">Task Agent Web UI</h1>
+            <p className="text-xs text-muted-foreground leading-tight">Select an agent to start a conversation</p>
+          </div>
+          <div className="scale-75 origin-right">
+            <AuthStatus />
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Select an Agent</h2>
-          <p className="text-gray-600">Choose an AI agent to start a conversation</p>
-        </div>
+      <main className="max-w-4xl mx-auto px-4 py-6">
 
         {loading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white rounded-lg border border-gray-200 p-6">
+              <div key={i} className="bg-card rounded-lg border border-border p-4">
                 <div className="animate-pulse">
-                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                  <div className="h-3 bg-gray-200 rounded w-full mb-4"></div>
-                  <div className="h-10 bg-gray-200 rounded"></div>
+                  <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
+                  <div className="h-3 bg-muted rounded w-full mb-4"></div>
+                  <div className="h-8 bg-muted rounded"></div>
                 </div>
               </div>
             ))}
@@ -55,19 +56,19 @@ export default function AgentSelection() {
         )}
 
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-800">{error}</p>
+          <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+            <p className="text-destructive text-sm">{error}</p>
           </div>
         )}
 
         {!loading && !error && Object.keys(agents).length === 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <p className="text-yellow-800">No agents available. Please add agent configurations to the task-agents directory.</p>
+          <div className="bg-muted/30 border border-border rounded-lg p-4">
+            <p className="text-muted-foreground text-sm">No agents available. Please add agent configurations to the task-agents directory.</p>
           </div>
         )}
 
         {!loading && !error && Object.keys(agents).length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.entries(agents).map(([key, agent]) => (
               <AgentCard key={key} agent={agent} agentKey={key} />
             ))}

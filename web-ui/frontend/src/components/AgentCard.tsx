@@ -1,7 +1,9 @@
 import { useNavigate } from 'react-router-dom'
 import { type Agent } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { Code2, FileText } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Code2, FileText, Bot } from 'lucide-react'
 
 interface AgentCardProps {
   agent: Agent
@@ -19,50 +21,50 @@ export default function AgentCard({ agent, agentKey }: AgentCardProps) {
   const Icon = agent.name.toLowerCase().includes('code') ? Code2 : FileText
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-lg transition-shadow">
-      <div className="flex items-start gap-4 mb-4">
-        <div className="p-2 bg-gray-100 rounded-lg">
-          <Icon className="w-6 h-6 text-gray-700" />
+    <div className="bg-card rounded-lg border border-border p-4 hover:bg-card/80 transition-colors cursor-pointer group"
+         onClick={handleSelect}>
+      <div className="flex items-start gap-3 mb-3">
+        <div className="p-2 bg-primary/10 rounded-lg">
+          <Bot className="w-4 h-4 text-primary" />
         </div>
-        <div className="flex-1">
-          <h3 className="text-lg font-semibold text-gray-900">{agent.name}</h3>
-          <p className="text-sm text-gray-600 mt-1">{agent.description}</p>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-medium text-foreground truncate">{agent.name}</h3>
+          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{agent.description}</p>
         </div>
       </div>
 
-      <div className="space-y-3 mb-4">
-        <div>
-          <span className="text-sm font-medium text-gray-700">Model: </span>
-          <span className="text-sm text-gray-600">{agent.model}</span>
+      <div className="space-y-2 mb-4">
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="text-xs px-2 py-0.5">
+            {agent.model}
+          </Badge>
+          {agent.resume_session && (
+            <Badge variant="outline" className="text-xs px-2 py-0.5">
+              Session: {agent.max_exchanges}
+            </Badge>
+          )}
         </div>
         
-        <div>
-          <span className="text-sm font-medium text-gray-700">Tools: </span>
-          <span className="text-sm text-gray-600">
-            {agent.tools.slice(0, 3).join(', ')}
-            {agent.tools.length > 3 && ` +${agent.tools.length - 3} more`}
-          </span>
+        <div className="flex flex-wrap gap-1">
+          {agent.tools.slice(0, 3).map((tool, index) => (
+            <Badge key={index} variant="outline" className="text-xs px-1.5 py-0.5">
+              {tool}
+            </Badge>
+          ))}
+          {agent.tools.length > 3 && (
+            <Badge variant="outline" className="text-xs px-1.5 py-0.5">
+              +{agent.tools.length - 3}
+            </Badge>
+          )}
         </div>
-
-        {agent.resume_session && (
-          <div>
-            <span className="text-sm font-medium text-gray-700">Session: </span>
-            <span className="text-sm text-gray-600">
-              Up to {agent.max_exchanges} exchanges
-            </span>
-          </div>
-        )}
       </div>
 
-      <button
-        onClick={handleSelect}
-        className={cn(
-          "w-full py-2 px-4 rounded-lg font-medium transition-colors",
-          "bg-blue-600 text-white hover:bg-blue-700"
-        )}
+      <Button
+        size="sm"
+        className="w-full h-8 text-xs bg-primary hover:bg-primary/90 group-hover:bg-primary/80"
       >
-        Select Agent
-      </button>
+        Start Chat
+      </Button>
     </div>
   )
 }
