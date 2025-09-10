@@ -100,6 +100,7 @@ class SDKMessageParser:
                     )
                     blocks.append(tool_block.to_dict())
                     logger.debug(f"Parsed tool use block: {tool_block.name}")
+                
         
         return {
             "type": "assistant_message",

@@ -38,6 +38,8 @@ class SDKExecutor:
         """Initialize the SDK executor."""
         self.has_claude_max = HAS_CLAUDE_MAX
         self.has_sdk = ClaudeSDKClient is not None or HAS_CLAUDE_MAX
+        self._current_client = None  # Track active client for interrupt support
+        self._current_task = None    # Track current task info
         
         if not self.has_sdk:
             logger.warning("Neither claude-max nor claude-code-sdk is available. SDK execution disabled.")
@@ -116,85 +118,95 @@ class SDKExecutor:
                 
                 # Use exact pattern from documentation
                 async with ClaudeSDKClient(options=options) as client:
-                    await client.query(task_description)
+                    # Store client reference for interrupt support
+                    self._current_client = client
+                    self._current_task = task_description
+                    
+                    try:
+                        await client.query(task_description)
 
-                    messages = []
-                    result_data = None
+                        messages = []
+                        result_data = None
 
-                    async for message in client.receive_messages():
-                        messages.append(message)
-                        message_type = type(message).__name__
-                        
-                        # Parse message using the new parser
-                        parsed_message = parser.parse_message(message)
-                        
-                        if parsed_message:
-                            # Handle different message types
-                            if parsed_message.get("type") == "assistant_message":
-                                # Stream assistant message blocks
-                                for block in parsed_message.get("blocks", []):
-                                    if block["type"] == "text":
-                                        # Stream text content
-                                        yield parser.create_text_event(block["content"])
-                                    elif block["type"] == "tool_use":
-                                        # Stream tool use
-                                        yield parser.create_tool_use_event(
-                                            name=block["name"],
-                                            input_data=block["input"],
-                                            tool_id=block.get("id")
-                                        )
+                        async for message in client.receive_messages():
+                            messages.append(message)
+                            message_type = type(message).__name__
                             
-                            elif parsed_message.get("type") == "user_message":
-                                # UserMessage contains tool results!
-                                logger.debug(f"Processing user message with {len(parsed_message.get('blocks', []))} blocks")
-                                for block in parsed_message.get("blocks", []):
-                                    if block["type"] == "tool_result":
-                                        logger.info(f"Sending tool_result event from UserMessage for tool_use_id: {block['tool_use_id'][:10]}...")
-                                        yield parser.create_tool_result_event(
-                                            tool_use_id=block["tool_use_id"],
-                                            output=block["output"],
-                                            is_error=block["is_error"]
-                                        )
+                            # Parse message using the new parser
+                            parsed_message = parser.parse_message(message)
                             
-                            elif parsed_message.get("type") == "system_message":
-                                # Stream system message blocks (for other system notifications)
-                                logger.debug(f"Processing system message with {len(parsed_message.get('blocks', []))} blocks")
-                                for block in parsed_message.get("blocks", []):
-                                    logger.debug(f"Processing block type: {block.get('type')}")
-                                    if block["type"] == "tool_result":
-                                        logger.info(f"Sending tool_result event for tool_use_id: {block['tool_use_id'][:10]}...")
-                                        yield parser.create_tool_result_event(
-                                            tool_use_id=block["tool_use_id"],
-                                            output=block["output"],
-                                            is_error=block["is_error"]
-                                        )
-                                    elif block["type"] == "text":
-                                        # System text (notifications)
-                                        yield parser.create_text_event(block["content"])
-                            
-                            elif parsed_message.get("type") == "result":
-                                # Result message with metadata
-                                result_data = parsed_message
+                            if parsed_message:
+                                # Handle different message types
+                                if parsed_message.get("type") == "assistant_message":
+                                    # Stream assistant message blocks
+                                    for block in parsed_message.get("blocks", []):
+                                        if block["type"] == "text":
+                                            # Stream text content
+                                            yield parser.create_text_event(block["content"])
+                                        elif block["type"] == "tool_use":
+                                            # Stream tool use
+                                            yield parser.create_tool_use_event(
+                                                name=block["name"],
+                                                input_data=block["input"],
+                                                tool_id=block.get("id")
+                                            )
                                 
-                                # Send metadata event
-                                yield parser.create_metadata_event(result_data)
+                                elif parsed_message.get("type") == "user_message":
+                                    # UserMessage contains tool results!
+                                    logger.debug(f"Processing user message with {len(parsed_message.get('blocks', []))} blocks")
+                                    for block in parsed_message.get("blocks", []):
+                                        if block["type"] == "tool_result":
+                                            logger.info(f"Sending tool_result event from UserMessage for tool_use_id: {block['tool_use_id'][:10]}...")
+                                            yield parser.create_tool_result_event(
+                                                tool_use_id=block["tool_use_id"],
+                                                output=block["output"],
+                                                is_error=block["is_error"]
+                                            )
                                 
-                                logger.info(f"SDK completed with metadata: {result_data}")
-                                break
-                        
-                        # Fallback to original streaming for compatibility
-                        # This ensures we don't break anything if parsing fails
-                        elif hasattr(message, 'content') and not parsed_message:
-                            logger.warning(f"Falling back to original streaming for message type: {message_type}")
-                            for block in message.content:
-                                if hasattr(block, 'text'):
-                                    json_event = {
-                                        "type": "text",
-                                        "content": {
-                                            "text": block.text
+                                elif parsed_message.get("type") == "system_message":
+                                    # Stream system message blocks (for other system notifications)
+                                    logger.debug(f"Processing system message with {len(parsed_message.get('blocks', []))} blocks")
+                                    for block in parsed_message.get("blocks", []):
+                                        logger.debug(f"Processing block type: {block.get('type')}")
+                                        if block["type"] == "tool_result":
+                                            logger.info(f"Sending tool_result event for tool_use_id: {block['tool_use_id'][:10]}...")
+                                            yield parser.create_tool_result_event(
+                                                tool_use_id=block["tool_use_id"],
+                                                output=block["output"],
+                                                is_error=block["is_error"]
+                                            )
+                                        elif block["type"] == "text":
+                                            # System text (notifications)
+                                            yield parser.create_text_event(block["content"])
+                                
+                                elif parsed_message.get("type") == "result":
+                                    # Result message with metadata
+                                    result_data = parsed_message
+                                    
+                                    # Send metadata event
+                                    yield parser.create_metadata_event(result_data)
+                                    
+                                    logger.info(f"SDK completed with metadata: {result_data}")
+                                    break
+                            
+                            # Fallback to original streaming for compatibility
+                            # This ensures we don't break anything if parsing fails
+                            elif hasattr(message, 'content') and not parsed_message:
+                                logger.warning(f"Falling back to original streaming for message type: {message_type}")
+                                for block in message.content:
+                                    if hasattr(block, 'text'):
+                                        json_event = {
+                                            "type": "text",
+                                            "content": {
+                                                "text": block.text
+                                            }
                                         }
-                                    }
-                                    yield json.dumps(json_event)
+                                        yield json.dumps(json_event)
+                    finally:
+                        # Clear client reference when done
+                        self._current_client = None
+                        self._current_task = None
+                        logger.debug("Cleared client reference after task completion")
                     
         except Exception as e:
             logger.error(f"SDK execution failed: {e}")
@@ -212,6 +224,25 @@ class SDKExecutor:
             bool: True if either claude-max or claude-code-sdk is installed
         """
         return self.has_sdk
+    
+    async def interrupt(self) -> bool:
+        """Interrupt the currently executing task.
+        
+        Returns:
+            bool: True if interrupt was sent, False if no active task
+        """
+        if self._current_client:
+            try:
+                logger.info(f"Interrupting current task: {self._current_task[:50]}...")
+                await self._current_client.interrupt()
+                logger.info("Interrupt signal sent successfully")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to interrupt task: {e}")
+                return False
+        else:
+            logger.debug("No active client to interrupt")
+            return False
 
 
 # Singleton instance

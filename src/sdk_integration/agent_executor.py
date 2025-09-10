@@ -182,3 +182,15 @@ class AgentExecutor:
         """
         agents = self.list_agents()
         return agents.get(agent_name)
+    
+    async def interrupt_current(self) -> bool:
+        """Interrupt the currently running agent task.
+        
+        Returns:
+            bool: True if interrupt was successful, False otherwise
+        """
+        if self.sdk_executor and hasattr(self.sdk_executor, 'interrupt'):
+            return await self.sdk_executor.interrupt()
+        else:
+            logger.warning("No SDK executor available or interrupt not supported")
+            return False

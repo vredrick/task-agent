@@ -13,7 +13,7 @@ import AuthStatus from '@/components/AuthStatus'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Send, RotateCcw, User, Bot, Paperclip, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Send, RotateCcw, User, Bot, Paperclip, ChevronDown, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ChatMessage {
@@ -255,6 +255,39 @@ export default function Chat() {
                 
                 return prev
               })
+            } else if (message.type === 'interrupt_result') {
+              // Handle interrupt result
+              console.log('Interrupt result received:', message)
+              
+              // Mark any pending tools as interrupted
+              setMessages(prev => prev.map(msg => {
+                if (msg.toolUse && msg.toolUse.state === 'input-available' && !msg.toolUse.output) {
+                  return {
+                    ...msg,
+                    toolUse: {
+                      ...msg.toolUse,
+                      state: 'output-error' as const,
+                      output: 'Tool execution interrupted'
+                    }
+                  }
+                }
+                return msg
+              }))
+              
+              // Clear pending tools that haven't been added to messages
+              setPendingTools([])
+              
+              // Stop loading
+              setLoading(false)
+              setCurrentResponse('')
+              setIsTextStreaming(false)
+              
+              // Log the interrupt result
+              if (message.success) {
+                console.log('Task interrupted successfully')
+              } else {
+                console.log('Failed to interrupt or no active task')
+              }
             } else if (message.type === 'metadata') {
               // Handle SDK metadata
               const metadata = message.data
@@ -449,6 +482,17 @@ export default function Chat() {
     setCurrentResponse('')
     if (wsRef.current && agentName) {
       wsRef.current.sendMessage(agentName, 'Reset session', true)
+    }
+  }
+  
+  const handleInterrupt = async () => {
+    if (wsRef.current) {
+      // Send interrupt signal via WebSocket
+      wsRef.current.ws?.send(JSON.stringify({ type: 'interrupt' }))
+      console.log('Interrupt signal sent')
+      // Stop loading state
+      setLoading(false)
+      setCurrentResponse('')
     }
   }
 
@@ -656,15 +700,16 @@ export default function Chat() {
                       </SelectContent>
                     </Select>
                     
-                    {/* Send Button */}
+                    {/* Send/Stop Button - Same shape, different state */}
                     <Button
-                      onClick={handleSend}
-                      disabled={loading || connecting || !wsRef.current || !input.trim()}
-                      size="sm"
-                      className="h-8 w-8 p-0 bg-primary hover:bg-primary/90"
+                      onClick={loading ? handleInterrupt : handleSend}
+                      disabled={!loading && (connecting || !wsRef.current || !input.trim())}
+                      size="icon"
+                      variant={loading ? "destructive" : "default"}
+                      className="h-8 w-8"
                     >
                       {loading ? (
-                        <Loader size={16} />
+                        <Square className="w-4 h-4" />
                       ) : (
                         <Send className="w-4 h-4" />
                       )}

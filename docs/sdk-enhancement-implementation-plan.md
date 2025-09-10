@@ -128,43 +128,130 @@ export const ToolDisplay: React.FC<{
 ### Phase 4: Interrupt Support & Stop Button
 **Goal:** Add ability to cancel running agent tasks
 
-#### 4.1 Backend Interrupt Handling
+**Status:** Requires fundamental SDK client lifecycle changes
+
+**Root Cause:** The SDK client is destroyed immediately after yielding messages due to context manager pattern. By the time user clicks Stop, there's no client to interrupt.
+
+#### 4.1 SDK Client Lifecycle Refactor (REQUIRED)
+
+**Problem:** Current implementation uses context manager that exits too early:
 ```python
-# sdk_executor.py additions
+# BROKEN - Client dies before interrupt possible
+async with ClaudeSDKClient() as client:
+    await client.query(task)
+    async for message in client.receive_messages():
+        yield message
+# Client destroyed here - too early!
+```
+
+**Solution:** Switch to manual connection management:
+```python
+# sdk_executor.py - Manual connection pattern
 class SDKExecutor:
     def __init__(self):
-        self._current_query = None  # Track active query
+        self._current_client = None  # Persistent client reference
+        self._current_task = None
     
-    async def interrupt_task(self) -> bool:
-        """Interrupt current task if running"""
-        if self._current_query:
-            await self._current_query.interrupt()
-            return True
+    async def execute_task(self, agent_config, task_description, session_id=None):
+        """Execute with manual client lifecycle"""
+        # Create client WITHOUT context manager
+        options = ClaudeCodeOptions(...)
+        self._current_client = ClaudeSDKClient(options)
+        
+        try:
+            # Manual connection
+            await self._current_client.connect(task_description)
+            
+            # Stream messages - client stays alive
+            parser = SDKMessageParser()
+            async for message in self._current_client.receive_messages():
+                parsed = parser.parse_message(message)
+                if parsed:
+                    # Yield formatted messages
+                    yield json.dumps(parsed)
+            
+            # DO NOT disconnect here - keep alive for interrupts
+            
+        except Exception as e:
+            logger.error(f"SDK execution failed: {e}")
+            yield json.dumps({"type": "error", "error": str(e)})
+    
+    async def interrupt(self) -> bool:
+        """Interrupt the currently executing task"""
+        if self._current_client:
+            try:
+                await self._current_client.interrupt()
+                logger.info("Interrupt signal sent successfully")
+                return True
+            except Exception as e:
+                logger.error(f"Interrupt failed: {e}")
+                return False
         return False
+    
+    async def cleanup(self):
+        """Clean up client when session ends"""
+        if self._current_client:
+            try:
+                await self._current_client.disconnect()
+                logger.info("SDK client disconnected")
+            except Exception as e:
+                logger.error(f"Cleanup error: {e}")
+            finally:
+                self._current_client = None
+                self._current_task = None
 ```
 
-#### 4.2 WebSocket Interrupt Endpoint
+#### 4.2 WebSocket Lifecycle Management
 ```python
-# main.py WebSocket handler
-elif data.get("type") == "interrupt":
-    success = await agent_executor.interrupt_current()
-    await websocket.send_json({
-        "type": "interrupt_result",
-        "success": success
-    })
+# main.py - Add cleanup on disconnect
+@app.websocket("/ws/chat/{session_id}")
+async def websocket_chat(websocket: WebSocket, session_id: str):
+    await websocket.accept()
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            
+            # Handle interrupt request
+            if data.get("type") == "interrupt":
+                logger.info(f"Interrupt request for session {session_id}")
+                success = await agent_executor.interrupt_current()
+                await websocket.send_json({
+                    "type": "interrupt_result",
+                    "success": success,
+                    "message": "Interrupt sent" if success else "No active task"
+                })
+                continue
+            
+            # ... existing message handling ...
+            
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected: {session_id}")
+    finally:
+        # CRITICAL: Clean up SDK client on disconnect
+        if hasattr(agent_executor, 'sdk_executor'):
+            await agent_executor.sdk_executor.cleanup()
+        if session_id in active_connections:
+            del active_connections[session_id]
 ```
 
-#### 4.3 Frontend Stop Button
+#### 4.3 Frontend Stop Button (COMPLETED)
 ```tsx
-// Add to chat interface
-<Button 
-  onClick={handleStop}
-  disabled={!isStreaming}
-  variant="destructive"
+// Chat.tsx - Button transforms between Send/Stop
+<Button
+  onClick={loading ? handleInterrupt : handleSend}
+  size="icon"
+  variant={loading ? "destructive" : "default"}
 >
-  <Square className="w-4 h-4 mr-2" />
-  Stop
+  {loading ? <Square className="w-4 h-4" /> : <Send className="w-4 h-4" />}
 </Button>
+
+// Interrupt handler
+const handleInterrupt = () => {
+  if (wsRef.current?.readyState === WebSocket.OPEN) {
+    wsRef.current.send(JSON.stringify({ type: "interrupt" }));
+  }
+};
 ```
 
 ## Testing Strategy

@@ -142,6 +142,23 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             # Receive message from client
             data = await websocket.receive_json()
             
+            # Handle interrupt request
+            if data.get("type") == "interrupt":
+                logger.info(f"Received interrupt request for session {session_id}")
+                logger.debug(f"Active agent_executor: {agent_executor}")
+                logger.debug(f"Has SDK executor: {hasattr(agent_executor, 'sdk_executor')}")
+                if hasattr(agent_executor, 'sdk_executor'):
+                    logger.debug(f"SDK executor client: {agent_executor.sdk_executor._current_client}")
+                    logger.debug(f"SDK executor task: {agent_executor.sdk_executor._current_task}")
+                success = await agent_executor.interrupt_current()
+                logger.info(f"Interrupt result: {success}")
+                await websocket.send_json({
+                    "type": "interrupt_result",
+                    "success": success,
+                    "message": "Interrupt signal sent" if success else "No active task to interrupt"
+                })
+                continue
+            
             agent_name = data.get("agent_name")
             message = data.get("message")
             session_reset = data.get("session_reset", False)
