@@ -87,14 +87,27 @@ app.get('/api/auth/status', async (req: Request, res: Response) => {
 
 // Agents list endpoint - matches Python backend
 app.get('/api/agents', (req: Request, res: Response) => {
-  const agents = agentManager.getAllAgentsMetadata();
+  const agentsArray = agentManager.getAllAgentsMetadata();
+  // Convert to dictionary format like Python backend (kebab-case keys)
+  const agents: Record<string, any> = {};
+  agentsArray.forEach((agent: any) => {
+    // Convert agent name to kebab-case key
+    const key = agent.name.toLowerCase().replace(/\s+/g, '-');
+    agents[key] = agent;
+  });
   res.json({ agents });
 });
 
 // Single agent endpoint - matches Python backend
 app.get('/api/agents/:name', (req: Request, res: Response) => {
   const { name } = req.params;
-  const agent = agentManager.getAgent(name);
+  
+  // Try to find agent by kebab-case key
+  const agents = agentManager.getAllAgentsMetadata();
+  const agent = agents.find((a: any) => {
+    const key = a.name.toLowerCase().replace(/\s+/g, '-');
+    return key === name;
+  });
   
   if (!agent) {
     return res.status(404).json({
@@ -170,23 +183,30 @@ app.post('/api/execute', async (req: Request, res: Response) => {
 // Create HTTP server
 const server = http.createServer(app);
 
-// Create WebSocket server
+// Create WebSocket server attached to HTTP server
 const wss = new WebSocketServer({ 
-  server,
-  path: '/ws'
+  server
 });
+
+console.log('WebSocket server created (accepts any path)');
 
 // Active WebSocket connections mapped by session ID
 const activeConnections = new Map<string, { ws: WebSocket; abortController: AbortController }>();
 
 // WebSocket connection handler
 wss.on('connection', (ws, req) => {
-  // Extract session ID from URL path
+  console.log('WebSocket connection established, URL:', req.url);
+  
+  // Extract session ID from URL path (format: /ws/chat/{sessionId})
+  // Without path option, the full URL is preserved
   const url = req.url || '';
-  const pathMatch = url.match(/^\/chat\/([^?]+)/);
+  const pathMatch = url.match(/^\/ws\/chat\/([^?]+)/);
   const sessionId = pathMatch ? pathMatch[1] : null;
   
+  console.log('Extracted session ID:', sessionId);
+  
   if (!sessionId) {
+    console.error('No session ID found in URL:', url);
     ws.send(JSON.stringify({
       type: 'error',
       content: { text: 'Session ID required in path: /ws/chat/:sessionId' }
@@ -275,7 +295,18 @@ async function handleChatMessage(
     return;
   }
   
-  const agent = agentManager.getAgent(agentName);
+  // The agentName from frontend might be kebab-case key, find the actual agent
+  const agents = agentManager.getAllAgentsMetadata();
+  let agent = agents.find((a: any) => {
+    const key = a.name.toLowerCase().replace(/\s+/g, '-');
+    return key === agentName || a.name === agentName;
+  });
+  
+  if (!agent) {
+    // Try direct lookup as fallback
+    agent = agentManager.getAgent(agentName);
+  }
+  
   if (!agent) {
     ws.send(JSON.stringify({
       type: 'error',
@@ -350,6 +381,25 @@ function handleInterrupt(sessionId: string) {
 // Transform SDK messages to frontend format
 function transformSDKMessage(sdkMessage: SDKMessage): any {
   switch (sdkMessage.type) {
+    case 'stream_event':
+      // Handle streaming events from SDK
+      if (sdkMessage.event?.type === 'content_block_delta') {
+        const delta = sdkMessage.event.delta;
+        if (delta?.type === 'text_delta' && delta.text) {
+          return {
+            type: 'text_delta',
+            content: { text: delta.text }
+          };
+        }
+      }
+      // Ignore other stream events (message_start, content_block_start, etc.)
+      return null;
+    
+    case 'assistant':
+      // Skip the final complete message since we already streamed the text via deltas
+      // This prevents duplicate text in the frontend
+      return null;
+    
     case 'text':
       return {
         type: 'text',

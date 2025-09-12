@@ -105,9 +105,7 @@ export default function Chat() {
         const ws = new ChatWebSocket(
           sessionId,
           (message: WSMessage) => {
-            console.log('WebSocket message received:', message)
             if ((message.type === 'text' || message.type === 'text_delta') && message.content?.text) {
-              console.log(`Adding ${message.type} to currentResponse:`, message.content.text)
               
               // If we have a current message ID, update that message directly
               if (currentMessageId) {
@@ -313,7 +311,7 @@ export default function Chat() {
               }
             } else if (message.type === 'metadata') {
               // Handle SDK metadata
-              const metadata = message.data
+              const metadata = message.content || message.data
               console.log('Metadata received:', metadata)
               
               // Finalize any remaining text as a message if exists
@@ -495,11 +493,6 @@ export default function Chat() {
     content: currentResponse,
     isStreaming: false // Disable artificial streaming
   } : null
-
-  // Debug logging for streamingMessage and messages
-  console.log('Streaming message state:', { currentResponse, streamingMessage })
-  console.log('Messages array:', messages)
-  console.log('Combined messages for rendering:', [...messages, ...(streamingMessage ? [streamingMessage] : [])])
 
   const handleReset = () => {
     setMessages([])
