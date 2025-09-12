@@ -286,8 +286,6 @@ This document outlines the phase-by-phase plan to implement a TypeScript-based b
 
 ### 🚧 Next Steps
 1. **Phase 5**: WebSocket Streaming - Real-time message streaming with partial messages
-2. **Phase 6**: Frontend Configuration - Allow switching between backends
-3. **Phase 7**: Testing & Validation - Ensure feature parity
 
 ## Notes
 

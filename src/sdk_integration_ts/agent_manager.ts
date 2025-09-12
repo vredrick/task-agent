@@ -8,6 +8,8 @@ import path from 'path';
 import matter from 'gray-matter';
 import { AgentConfig, AgentConfigRaw } from './types/agent';
 
+export { AgentConfig } from './types/agent';
+
 export class AgentManager {
   private agents: Map<string, AgentConfig> = new Map();
   private configDir: string;

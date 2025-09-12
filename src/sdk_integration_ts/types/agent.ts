@@ -13,6 +13,7 @@ export interface AgentConfig {
   resourceDirs?: string[];
   filePath?: string;
   maxExchanges: number;
+  maxTurns?: number;
 }
 
 export interface AgentConfigRaw {

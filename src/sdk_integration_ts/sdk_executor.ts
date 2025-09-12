@@ -18,6 +18,14 @@ export interface SDKMessage {
   usage?: any;
   parent_tool_use_id?: string | null;
   event?: any;
+  text?: string;
+  tool_name?: string;
+  tool_params?: any;
+  is_error?: boolean;
+  model?: string;
+  delta?: any;
+  error?: string;
+  [key: string]: any; // Allow additional properties
 }
 
 export interface ExecutionOptions {

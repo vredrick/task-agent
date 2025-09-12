@@ -190,42 +190,61 @@ const wss = new WebSocketServer({
 
 console.log('WebSocket server created (accepts any path)');
 
-// Active WebSocket connections mapped by session ID
-const activeConnections = new Map<string, { ws: WebSocket; abortController: AbortController }>();
+// Active WebSocket connections mapped by connection ID
+// Each connection tracks its WebSocket, abort controller, and SDK session ID
+interface ConnectionInfo {
+  ws: WebSocket;
+  abortController: AbortController;
+  sdkSessionId: string | null;  // SDK session ID for conversation continuity
+  agentName: string | null;      // Current agent being used
+}
+
+const activeConnections = new Map<string, ConnectionInfo>();
+
+// Map connection IDs to SDK session IDs for quick lookup
+const connectionToSDKSession = new Map<string, string | null>();
 
 // WebSocket connection handler
 wss.on('connection', (ws, req) => {
   console.log('WebSocket connection established, URL:', req.url);
   
-  // Extract session ID from URL path (format: /ws/chat/{sessionId})
-  // Without path option, the full URL is preserved
+  // Extract connection ID from URL path (format: /ws/chat/{connectionId})
+  // Note: This is NOT an SDK session ID, just a connection identifier
   const url = req.url || '';
   const pathMatch = url.match(/^\/ws\/chat\/([^?]+)/);
-  const sessionId = pathMatch ? pathMatch[1] : null;
+  const connectionId = pathMatch ? pathMatch[1] : null;
   
-  console.log('Extracted session ID:', sessionId);
+  console.log('Extracted connection ID:', connectionId);
   
-  if (!sessionId) {
-    console.error('No session ID found in URL:', url);
+  if (!connectionId) {
+    console.error('No connection ID found in URL:', url);
     ws.send(JSON.stringify({
       type: 'error',
-      content: { text: 'Session ID required in path: /ws/chat/:sessionId' }
+      content: { text: 'Connection ID required in path: /ws/chat/:connectionId' }
     }));
     ws.close();
     return;
   }
   
-  console.log(`New WebSocket connection for session: ${sessionId}`);
+  console.log(`New WebSocket connection: ${connectionId}`);
   
-  // Create abort controller for this connection
+  // Create connection info for this connection
   const abortController = new AbortController();
-  activeConnections.set(sessionId, { ws, abortController });
+  const connectionInfo: ConnectionInfo = {
+    ws,
+    abortController,
+    sdkSessionId: null,  // Will be set after first SDK response
+    agentName: null
+  };
+  
+  activeConnections.set(connectionId, connectionInfo);
+  connectionToSDKSession.set(connectionId, null);
   
   // Send initial connection confirmation
   ws.send(JSON.stringify({
     type: 'metadata',
     content: {
-      session_id: sessionId,
+      connection_id: connectionId,
       backend: 'typescript',
       connected: true,
       timestamp: new Date().toISOString()
@@ -240,10 +259,10 @@ wss.on('connection', (ws, req) => {
       // Handle different message types
       switch (data.type) {
         case 'chat':
-          await handleChatMessage(ws, sessionId, data, abortController);
+          await handleChatMessage(ws, connectionId, data, abortController);
           break;
         case 'interrupt':
-          handleInterrupt(sessionId);
+          handleInterrupt(connectionId);
           break;
         case 'ping':
           ws.send(JSON.stringify({ type: 'pong' }));
@@ -264,24 +283,25 @@ wss.on('connection', (ws, req) => {
   });
   
   ws.on('close', () => {
-    console.log(`WebSocket connection closed for session: ${sessionId}`);
+    console.log(`WebSocket connection closed: ${connectionId}`);
     // Clean up and abort any running operations
-    const connection = activeConnections.get(sessionId);
+    const connection = activeConnections.get(connectionId);
     if (connection) {
       connection.abortController.abort();
-      activeConnections.delete(sessionId);
+      activeConnections.delete(connectionId);
+      connectionToSDKSession.delete(connectionId);
     }
   });
   
   ws.on('error', (error) => {
-    console.error(`WebSocket error for session ${sessionId}:`, error);
+    console.error(`WebSocket error for connection ${connectionId}:`, error);
   });
 });
 
 // Handle chat messages
 async function handleChatMessage(
   ws: WebSocket,
-  sessionId: string,
+  connectionId: string,
   data: any,
   abortController: AbortController
 ) {
@@ -295,16 +315,36 @@ async function handleChatMessage(
     return;
   }
   
+  // Get connection info
+  const connectionInfo = activeConnections.get(connectionId);
+  if (!connectionInfo) {
+    ws.send(JSON.stringify({
+      type: 'error',
+      content: { text: 'Connection not found' }
+    }));
+    return;
+  }
+  
+  // Update agent name in connection info
+  connectionInfo.agentName = agentName;
+  
   // The agentName from frontend might be kebab-case key, find the actual agent
-  const agents = agentManager.getAllAgentsMetadata();
-  let agent = agents.find((a: any) => {
-    const key = a.name.toLowerCase().replace(/\s+/g, '-');
-    return key === agentName || a.name === agentName;
-  });
+  // First try direct lookup
+  let agent = agentManager.getAgent(agentName);
   
   if (!agent) {
-    // Try direct lookup as fallback
-    agent = agentManager.getAgent(agentName);
+    // Try kebab-case conversion
+    const agents = agentManager.getAllAgentsMetadata();
+    const metadata = agents.find((a: any) => {
+      const key = a.name.toLowerCase().replace(/\s+/g, '-');
+      return key === agentName;
+    });
+    
+    if (metadata) {
+      // Convert metadata name to agent key (filename without extension)
+      const agentKey = metadata.name.toLowerCase().replace(/\s+/g, '-');
+      agent = agentManager.getAgent(agentKey);
+    }
   }
   
   if (!agent) {
@@ -315,18 +355,43 @@ async function handleChatMessage(
     return;
   }
   
+  // Get the SDK session ID for this connection (if any)
+  let sdkSessionId = connectionInfo.sdkSessionId;
+  
+  // Reset session if requested
+  if (sessionReset) {
+    console.log(`Resetting session for connection ${connectionId}`);
+    sdkSessionId = null;
+    connectionInfo.sdkSessionId = null;
+    connectionToSDKSession.set(connectionId, null);
+  }
+  
+  console.log(`Executing agent "${agentName}" with SDK session: ${sdkSessionId || 'new'}`);
+  
   try {
-    // Execute agent with streaming
+    // Execute agent with the SDK session ID (not connection ID!)
     const generator = await sdkExecutor.executeAgent(agent, prompt, {
-      sessionId,
+      sessionId: sdkSessionId || undefined,  // Use SDK session, not connection ID
       sessionReset,
       maxTurns,
       includePartialMessages: true, // Always enable for WebSocket streaming
       abortController
     });
     
-    // Stream messages to client
+    // Stream messages to client and capture SDK session ID
+    let newSDKSessionId: string | null = null;
+    
     for await (const message of generator) {
+      // Capture SDK session ID from init message
+      if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
+        newSDKSessionId = message.session_id;
+        console.log(`Received new SDK session ID: ${newSDKSessionId}`);
+        
+        // Update connection info with new SDK session
+        connectionInfo.sdkSessionId = newSDKSessionId;
+        connectionToSDKSession.set(connectionId, newSDKSessionId);
+      }
+      
       // Transform SDK message to frontend format
       const frontendMessage = transformSDKMessage(message);
       if (frontendMessage) {
@@ -334,12 +399,13 @@ async function handleChatMessage(
       }
     }
     
-    // Send completion signal
+    // Send completion signal with session status
     ws.send(JSON.stringify({
       type: 'metadata',
       content: {
         event: 'stream_complete',
-        session_id: sessionId,
+        connection_id: connectionId,
+        has_session: !!newSDKSessionId,
         timestamp: new Date().toISOString()
       }
     }));
@@ -350,7 +416,7 @@ async function handleChatMessage(
         type: 'metadata',
         content: {
           event: 'stream_interrupted',
-          session_id: sessionId
+          connection_id: connectionId
         }
       }));
     } else {
@@ -363,16 +429,16 @@ async function handleChatMessage(
 }
 
 // Handle interrupt requests
-function handleInterrupt(sessionId: string) {
-  const connection = activeConnections.get(sessionId);
+function handleInterrupt(connectionId: string) {
+  const connection = activeConnections.get(connectionId);
   if (connection) {
-    console.log(`Interrupting session: ${sessionId}`);
+    console.log(`Interrupting connection: ${connectionId}`);
     connection.abortController.abort();
     connection.ws.send(JSON.stringify({
       type: 'metadata',
       content: {
         event: 'interrupt_acknowledged',
-        session_id: sessionId
+        connection_id: connectionId
       }
     }));
   }
