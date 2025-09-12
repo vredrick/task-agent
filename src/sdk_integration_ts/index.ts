@@ -11,7 +11,10 @@ export { oauthManager, OAuthManager, AuthStatus, ClaudeOAuthCredentials } from '
 export { AgentManager } from './agent_manager';
 export * from './types/agent';
 
-// Future exports will include:
-// - agent_executor.ts (matches Python agent_executor.py)
-// - sdk_executor.ts (matches Python sdk_executor.py)
-// - message_parser.ts (matches Python message_parser.py)
+// Export SDK executor components (matches Python sdk_executor.py)
+export { SDKExecutor } from './sdk_executor';
+export type { SDKMessage, ExecutionOptions } from './sdk_executor';
+
+// Export session store (matches Python session handling)
+export { SessionStore } from './session_store';
+export type { Session } from './session_store';

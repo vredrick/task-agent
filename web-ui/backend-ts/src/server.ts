@@ -10,7 +10,8 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import path from 'path';
 import dotenv from 'dotenv';
-import { oauthManager, AuthStatus, AgentManager } from '@sdk';
+import { oauthManager, AgentManager, SDKExecutor } from '../../../src/sdk_integration_ts';
+import type { SDKMessage, AuthStatus } from '../../../src/sdk_integration_ts';
 
 // Load environment variables
 dotenv.config();
@@ -19,8 +20,9 @@ dotenv.config();
 const PORT = process.env.PORT || 8001;
 const AGENTS_PATH = process.env.TASK_AGENTS_PATH || path.join(__dirname, '../../../task-agents');
 
-// Initialize agent manager
+// Initialize agent manager and SDK executor
 const agentManager = new AgentManager(AGENTS_PATH);
+const sdkExecutor = new SDKExecutor();
 
 // Load agents on startup
 (async () => {
@@ -69,7 +71,10 @@ app.get('/api/info', (req: Request, res: Response) => {
       auth: '/api/auth/status',
       agents: '/api/agents',
       agentDetail: '/api/agents/:name',
-      chat: '/ws/chat/:sessionId (TODO)'
+      execute: '/api/execute (POST)',
+      sessions: '/api/sessions',
+      deleteSession: '/api/sessions/:sessionId (DELETE)',
+      chat: '/ws/chat/:sessionId (Phase 5)'
     }
   });
 });
@@ -102,6 +107,64 @@ app.get('/api/agents/:name', (req: Request, res: Response) => {
     ...agent,
     available: true
   });
+});
+
+// Session management endpoints
+app.get('/api/sessions', (req: Request, res: Response) => {
+  const sessions = sdkExecutor.getAvailableSessions();
+  res.json({ sessions });
+});
+
+app.delete('/api/sessions/:sessionId', (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  const deleted = sdkExecutor.clearSession(sessionId);
+  res.json({ success: deleted });
+});
+
+// Test execution endpoint (for Phase 4 testing)
+app.post('/api/execute', async (req: Request, res: Response) => {
+  const { agentName, prompt, sessionId, sessionReset, maxTurns, includePartialMessages } = req.body;
+  
+  if (!agentName || !prompt) {
+    return res.status(400).json({
+      error: 'Missing required parameters: agentName and prompt'
+    });
+  }
+  
+  const agent = agentManager.getAgent(agentName);
+  if (!agent) {
+    return res.status(404).json({
+      error: `Agent "${agentName}" not found`
+    });
+  }
+  
+  try {
+    const messages: SDKMessage[] = [];
+    const generator = await sdkExecutor.executeAgent(agent, prompt, {
+      sessionId,
+      sessionReset,
+      maxTurns,
+      includePartialMessages,
+      abortController: new AbortController()
+    });
+    
+    // Collect all messages
+    for await (const message of generator) {
+      messages.push(message);
+    }
+    
+    // Return collected messages
+    res.json({
+      success: true,
+      messages,
+      sessionId: messages.find(m => m.type === 'system' && m.subtype === 'init')?.session_id
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Execution failed',
+      details: error.message
+    });
+  }
 });
 
 // Create HTTP server
