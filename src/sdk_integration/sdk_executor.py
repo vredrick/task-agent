@@ -111,6 +111,8 @@ class SDKExecutor:
                     cwd=working_dir,
                     resume=session_id,  # SDK conversation ID (not CLI session ID)
                     max_turns=getattr(agent_config, 'max_exchanges', 5) if hasattr(agent_config, 'max_exchanges') else 5
+                    # Note: Partial message streaming not supported in SDK v0.0.21
+                    # The --include-partial-messages flag is for CLI only, not Python SDK
                 )
                 
                 # Initialize message parser
@@ -127,22 +129,54 @@ class SDKExecutor:
 
                         messages = []
                         result_data = None
+                        last_text_content = ""  # Track partial text accumulation
 
                         async for message in client.receive_messages():
                             messages.append(message)
                             message_type = type(message).__name__
+                            
+                            # Log message details for debugging partial support
+                            logger.debug(f"Received message type: {message_type}")
+                            
+                            # Check if this might be a partial message
+                            if hasattr(message, 'content'):
+                                content = message.content
+                                if isinstance(content, list) and len(content) > 0:
+                                    for idx, block in enumerate(content):
+                                        block_type = type(block).__name__
+                                        if hasattr(block, 'text'):
+                                            # Check if text is partial (incomplete)
+                                            text = block.text
+                                            logger.debug(f"Text block {idx}: {len(text)} chars, ends with: '{text[-20:] if len(text) > 20 else text}'")
                             
                             # Parse message using the new parser
                             parsed_message = parser.parse_message(message)
                             
                             if parsed_message:
                                 # Handle different message types
-                                if parsed_message.get("type") == "assistant_message":
+                                if parsed_message.get("type") == "partial_text":
+                                    # Handle partial text streaming
+                                    partial_text = parsed_message.get("content", "")
+                                    logger.info(f"Received partial text: {len(partial_text)} chars")
+                                    yield parser.create_text_event(partial_text)
+                                elif parsed_message.get("type") == "assistant_message":
                                     # Stream assistant message blocks
                                     for block in parsed_message.get("blocks", []):
                                         if block["type"] == "text":
-                                            # Stream text content
-                                            yield parser.create_text_event(block["content"])
+                                            # Check if this is partial text (accumulating)
+                                            current_text = block["content"]
+                                            
+                                            # Stream the new portion if it's an addition
+                                            if current_text.startswith(last_text_content) and len(current_text) > len(last_text_content):
+                                                # This is a partial update - send only the new part
+                                                new_portion = current_text[len(last_text_content):]
+                                                logger.info(f"Detected partial text update: +{len(new_portion)} chars")
+                                                yield parser.create_text_event(new_portion)
+                                                last_text_content = current_text
+                                            else:
+                                                # Full text block or new block
+                                                yield parser.create_text_event(current_text)
+                                                last_text_content = current_text
                                         elif block["type"] == "tool_use":
                                             # Stream tool use
                                             yield parser.create_tool_use_event(
@@ -152,6 +186,8 @@ class SDKExecutor:
                                             )
                                 
                                 elif parsed_message.get("type") == "user_message":
+                                    # Reset text accumulator for new message type
+                                    last_text_content = ""
                                     # UserMessage contains tool results!
                                     logger.debug(f"Processing user message with {len(parsed_message.get('blocks', []))} blocks")
                                     for block in parsed_message.get("blocks", []):
@@ -164,6 +200,8 @@ class SDKExecutor:
                                             )
                                 
                                 elif parsed_message.get("type") == "system_message":
+                                    # Reset text accumulator for new message type
+                                    last_text_content = ""
                                     # Stream system message blocks (for other system notifications)
                                     logger.debug(f"Processing system message with {len(parsed_message.get('blocks', []))} blocks")
                                     for block in parsed_message.get("blocks", []):

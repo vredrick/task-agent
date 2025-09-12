@@ -10,7 +10,7 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import path from 'path';
 import dotenv from 'dotenv';
-import { oauthManager, AuthStatus } from '@sdk';
+import { oauthManager, AuthStatus, AgentManager } from '@sdk';
 
 // Load environment variables
 dotenv.config();
@@ -18,6 +18,15 @@ dotenv.config();
 // Constants
 const PORT = process.env.PORT || 8001;
 const AGENTS_PATH = process.env.TASK_AGENTS_PATH || path.join(__dirname, '../../../task-agents');
+
+// Initialize agent manager
+const agentManager = new AgentManager(AGENTS_PATH);
+
+// Load agents on startup
+(async () => {
+  await agentManager.loadAgents();
+  console.log(`Loaded ${agentManager.listAgents().length} agents from ${AGENTS_PATH}`);
+})();
 
 // Create Express app
 const app = express();
@@ -58,7 +67,8 @@ app.get('/api/info', (req: Request, res: Response) => {
       health: '/api/health',
       info: '/api/info',
       auth: '/api/auth/status',
-      agents: '/api/agents (TODO)',
+      agents: '/api/agents',
+      agentDetail: '/api/agents/:name',
       chat: '/ws/chat/:sessionId (TODO)'
     }
   });
@@ -68,6 +78,30 @@ app.get('/api/info', (req: Request, res: Response) => {
 app.get('/api/auth/status', async (req: Request, res: Response) => {
   const status = await oauthManager.getAuthStatus();
   res.json(status);
+});
+
+// Agents list endpoint - matches Python backend
+app.get('/api/agents', (req: Request, res: Response) => {
+  const agents = agentManager.getAllAgentsMetadata();
+  res.json({ agents });
+});
+
+// Single agent endpoint - matches Python backend
+app.get('/api/agents/:name', (req: Request, res: Response) => {
+  const { name } = req.params;
+  const agent = agentManager.getAgent(name);
+  
+  if (!agent) {
+    return res.status(404).json({
+      error: 'Agent not found',
+      available: false
+    });
+  }
+  
+  res.json({
+    ...agent,
+    available: true
+  });
 });
 
 // Create HTTP server

@@ -27,96 +27,121 @@ This document outlines the phase-by-phase plan to implement a TypeScript-based b
                     ↓               ↓
     ┌──────────────────────┐  ┌──────────────────────┐
     │  Python Backend       │  │  TypeScript Backend  │
-    │  (FastAPI)           │  │  (Express/Fastify)   │
+    │  (FastAPI)           │  │  (Express + ws)      │
     │  Port: 8000          │  │  Port: 8001          │
-    │  • SDK: claude-code  │  │  • SDK: @anthropic-  │
-    │    -sdk (limited)    │  │    ai/claude-code    │
+    │  • SDK: subprocess   │  │  • SDK: @anthropic-  │
+    │    claude CLI        │  │    ai/claude-code    │
     └──────────────────────┘  └──────────────────────┘
+           ↓                           ↓
+    ┌──────────────────────────────────────────┐
+    │        Shared SDK Implementation         │
+    │  /src/sdk_integration/   (Python)        │
+    │  /src/sdk_integration_ts/ (TypeScript)   │
+    └──────────────────────────────────────────┘
 ```
 
 ## Phase-by-Phase Implementation
 
-### Phase 1: TypeScript Backend Setup
+### Phase 1: TypeScript Backend Setup ✅
 **Goal**: Create basic TypeScript/Node.js backend structure
 
-**Tasks**:
-1. Create new directory structure: `web-ui/backend-ts/`
-2. Initialize Node.js project with TypeScript
-3. Install dependencies:
+**Tasks** (Completed):
+1. ✅ Create new directory structure: `web-ui/backend-ts/`
+2. ✅ Initialize Node.js project with TypeScript
+3. ✅ Install dependencies:
    - `@anthropic-ai/claude-code` (the SDK)
-   - `express` or `fastify` (web framework)
-   - `ws` or `socket.io` (WebSocket support)
+   - `express` (web framework)
+   - `ws` (WebSocket support)
    - `typescript`, `tsx` (for development)
-4. Set up TypeScript configuration
-5. Create basic Express server on port 8001
-6. Add CORS configuration matching Python backend
+4. ✅ Set up TypeScript configuration with path aliases
+5. ✅ Create basic Express server on port 8001
+6. ✅ Add CORS configuration matching Python backend
 
 **Deliverables**:
-- [ ] `backend-ts/package.json`
-- [ ] `backend-ts/tsconfig.json`
-- [ ] `backend-ts/src/server.ts` (basic server)
-- [ ] Health check endpoint working
+- ✅ `backend-ts/package.json`
+- ✅ `backend-ts/tsconfig.json` 
+- ✅ `backend-ts/src/server.ts` (basic server with health check)
+- ✅ Health check endpoint working at `/health`
 
-### Phase 2: Authentication Integration
+### Phase 2: Authentication Integration ✅
 **Goal**: Share OAuth authentication with Python implementation
 
-**Tasks**:
-1. Create auth module to read `.claude/.credentials.json`
-2. Implement credential validation
-3. Create `/api/auth/status` endpoint matching Python
-4. Ensure both backends can read same auth files
-5. Test subscription type detection
+**Tasks** (Completed):
+1. ✅ Create auth module to read `~/.claude/.credentials.json`
+2. ✅ Implement credential validation
+3. ✅ Create `/api/auth/status` endpoint matching Python
+4. ✅ Ensure both backends can read same auth files
+5. ✅ Test subscription type detection (Pro/Free tier)
 
 **Deliverables**:
-- [ ] `backend-ts/src/auth/oauth.ts`
-- [ ] `/api/auth/status` endpoint
-- [ ] Verified reading shared credentials
+- ✅ `/src/sdk_integration_ts/oauth_handler.ts` (mirrors Python structure)
+- ✅ `/api/auth/status` endpoint
+- ✅ Verified reading shared credentials
+- ✅ TypeScript SDK integration module at `/src/sdk_integration_ts/`
 
 ### Phase 3: Agent Management
-**Goal**: Load and parse agent configurations
+**Goal**: Load and parse agent configurations from shared `task-agents/*.md` files
 
 **Tasks**:
-1. Create agent loader for `.md` files
-2. Parse YAML frontmatter
-3. Create `/api/agents` endpoint
-4. Create `/api/agents/:name` endpoint
-5. Ensure identical agent listing as Python
+1. Create TypeScript agent loader for `.md` files
+2. Parse YAML frontmatter using `gray-matter`
+3. Create `/api/agents` endpoint to list all agents
+4. Create `/api/agents/:name` endpoint for specific agent details
+5. Ensure identical agent listing as Python backend
+6. Share agent directory via environment variable (`TASK_AGENTS_PATH`)
 
 **Deliverables**:
-- [ ] `backend-ts/src/agents/loader.ts`
-- [ ] `backend-ts/src/agents/types.ts`
-- [ ] Agent endpoints matching Python output
+- [ ] `/src/sdk_integration_ts/agent_manager.ts` (mirrors Python)
+- [ ] `/src/sdk_integration_ts/types/agent.ts` (agent types)
+- [ ] `/api/agents` and `/api/agents/:name` endpoints
+- [ ] Verified identical agent loading with Python
 
 ### Phase 4: Claude Code SDK Integration
-**Goal**: Implement core SDK functionality
+**Goal**: Implement core SDK functionality using `@anthropic-ai/claude-code`
 
 **Tasks**:
-1. Initialize `@anthropic-ai/claude-code` SDK
-2. Configure SDK with OAuth credentials
-3. Create agent executor using SDK
-4. Implement session management
-5. Test basic query execution
+1. Initialize `@anthropic-ai/claude-code` SDK with OAuth
+2. Create SDK executor that matches Python's `sdk_executor.py`
+3. Implement agent execution with proper tool configuration
+4. Add session management and persistence
+5. Test basic query execution through SDK
+
+**Key Considerations**:
+- SDK provides direct API access (no subprocess needed)
+- Native partial message streaming support
+- Session IDs for conversation continuity
 
 **Deliverables**:
-- [ ] `backend-ts/src/sdk/executor.ts`
-- [ ] `backend-ts/src/sdk/session.ts`
+- [ ] `/src/sdk_integration_ts/sdk_executor.ts` (mirrors Python)
+- [ ] `/src/sdk_integration_ts/session_store.ts` 
 - [ ] Basic query execution working
+- [ ] Session persistence to `/tmp/task_agents_sessions.json`
 
 ### Phase 5: WebSocket Streaming
-**Goal**: Implement real-time streaming matching Python
+**Goal**: Implement real-time streaming with partial message support
 
 **Tasks**:
-1. Set up WebSocket server on `/ws/chat/:sessionId`
-2. Implement message streaming from SDK
-3. Add partial message support (content_block_delta)
-4. Match JSON message format of Python backend
-5. Implement interrupt handling
+1. Set up WebSocket server using `ws` library
+2. Create `/ws/chat/:sessionId` endpoint matching Python
+3. Stream SDK responses with partial message deltas
+4. Match exact JSON message format of Python backend
+5. Implement interrupt/cancel handling
+6. Add connection management and cleanup
+
+**Message Types to Support**:
+- `text` - Full text blocks
+- `text_delta` - Partial text streaming
+- `tool_use` - Tool invocations
+- `tool_result` - Tool responses
+- `metadata` - Session info
+- `error` - Error messages
 
 **Deliverables**:
-- [ ] `backend-ts/src/websocket/handler.ts`
-- [ ] Streaming messages to frontend
-- [ ] Partial message streaming working
-- [ ] Interrupt support
+- [ ] WebSocket handler in `backend-ts/src/server.ts`
+- [ ] Message streaming from SDK
+- [ ] Partial message support (`content_block_delta`)
+- [ ] Interrupt/cancel support
+- [ ] Connection lifecycle management
 
 ### Phase 6: Frontend Configuration
 **Goal**: Allow frontend to switch between backends
@@ -192,26 +217,29 @@ This document outlines the phase-by-phase plan to implement a TypeScript-based b
 ## Key Differences to Leverage
 
 ### TypeScript SDK Advantages:
-- Direct SDK calls (no subprocess)
-- Partial message streaming support
-- Better TypeScript types
-- Native async/await
-- Same update cycle as CLI
+- Direct SDK calls via `@anthropic-ai/claude-code` (no subprocess)
+- Native partial message streaming support
+- Strong TypeScript types throughout
+- Native async/await patterns
+- Same update cycle as Claude CLI
+- Better performance (no process overhead)
 
 ### Shared Components:
 - Agent configurations (`task-agents/*.md`)
 - OAuth credentials (`~/.claude/.credentials.json`)
-- Frontend React app
+- Frontend React app (unchanged)
 - WebSocket message format (for compatibility)
+- Session storage (`/tmp/task_agents_sessions.json`)
+- Environment variables (`TASK_AGENTS_PATH`)
 
 ## Success Criteria
 
-- [ ] Both backends running simultaneously
+- [x] Both backends running simultaneously (Python:8000, TypeScript:8001)
 - [ ] Frontend can switch between backends
 - [ ] Identical functionality in both
 - [ ] Better streaming performance in TypeScript
 - [ ] No regression in features
-- [ ] Clean separation allows easy removal
+- [x] Clean separation allows easy removal
 
 ## Development Workflow
 
@@ -235,12 +263,16 @@ This document outlines the phase-by-phase plan to implement a TypeScript-based b
 - **Risk**: Frontend compatibility
   - **Mitigation**: Match message formats exactly
 
-## Next Steps
+## Current Status
 
-1. Review and approve this plan
-2. Start with Phase 1: TypeScript Backend Setup
-3. Create `backend-ts/` directory structure
-4. Begin implementation following the phases
+### ✅ Completed Phases
+- **Phase 1**: TypeScript Backend Setup - Express server running on port 8001
+- **Phase 2**: Authentication Integration - OAuth shared with Python
+
+### 🚧 Next Steps
+1. **Phase 3**: Agent Management - Load and parse agent configurations
+2. **Phase 4**: Claude Code SDK Integration - Implement SDK executor
+3. **Phase 5**: WebSocket Streaming - Real-time message streaming
 
 ## Notes
 

@@ -52,8 +52,31 @@ export default function Chat() {
   const [pendingTools, setPendingTools] = useState<any[]>([]) // Queue for tools waiting for text to finish
   const [isTextStreaming, setIsTextStreaming] = useState(false) // Track if text is currently streaming
   const [displayedTextLength, setDisplayedTextLength] = useState(0) // Track how much text has been displayed
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
 
-  // AI Elements handles scrolling automatically
+  // Manual scroll to bottom
+  const scrollToBottom = () => {
+    // Try multiple methods to ensure scrolling works
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    } else if (chatContainerRef.current) {
+      const scrollElement = chatContainerRef.current.querySelector('[role="log"]')
+      if (scrollElement) {
+        scrollElement.scrollTop = scrollElement.scrollHeight
+      }
+    }
+  }
+
+  // Scroll when messages or streaming content changes
+  useEffect(() => {
+    // Use requestAnimationFrame to ensure DOM has painted
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        scrollToBottom()
+      }, 100)
+    })
+  }, [messages, currentResponse, loading])
 
   // Load agent info
   useEffect(() => {
@@ -546,9 +569,9 @@ export default function Chat() {
       </header>
 
       {/* Chat Area */}
-      <div className="flex-1 overflow-hidden flex flex-col relative">
-        <Conversation className="flex-1 max-w-3xl mx-auto w-full px-4 pb-32 min-w-0">
-          <ConversationContent>
+      <div className="flex-1 flex flex-col relative overflow-hidden" ref={chatContainerRef}>
+        <Conversation className="flex-1 max-w-3xl mx-auto w-full px-4" style={{ height: 'calc(100vh - 180px)' }}>
+          <ConversationContent className="pb-24">
             {messages.length === 0 && !streamingMessage && (
               <div className="flex items-center justify-center h-full text-muted-foreground p-8">
                 <p>Start a conversation with {agent?.name || 'the agent'}</p>
@@ -628,14 +651,17 @@ export default function Chat() {
                 </MessageContent>
               </Message>
             )}
+            
+            {/* Scroll anchor */}
+            <div ref={messagesEndRef} style={{ height: 1 }} />
           </ConversationContent>
           
           <ConversationScrollButton />
         </Conversation>
 
         {/* Claude Desktop Style Input Area - Fixed Position */}
-        <div className="fixed bottom-0 left-0 right-0 p-2 z-50 bg-gradient-to-t from-background via-background/95 to-transparent">
-          <div className="max-w-2xl mx-auto">
+        <div className="fixed bottom-0 left-0 right-0 p-2 z-50 bg-gradient-to-t from-background via-background/95 to-transparent pointer-events-none">
+          <div className="max-w-2xl mx-auto pointer-events-auto">
             {/* Single input container with Claude styling - expands upward only */}
             <div 
               className="relative bg-background border border-input rounded-2xl transition-all duration-200"

@@ -243,6 +243,40 @@ class SDKMessageParser:
         logger.debug(f"Parsed result message with session_id: {metadata.get('session_id')}")
         return metadata
     
+    def parse_stream_event(self, message) -> Optional[Dict[str, Any]]:
+        """Parse a stream event message (potential partial content).
+        
+        Args:
+            message: The stream event object
+            
+        Returns:
+            Structured message dict or None if not relevant
+        """
+        # Stream events might contain partial content
+        if hasattr(message, 'event_type'):
+            event_type = message.event_type
+            logger.debug(f"Stream event type: {event_type}")
+            
+            if event_type == "text_delta":
+                # Partial text content
+                if hasattr(message, 'text'):
+                    return {
+                        "type": "partial_text",
+                        "content": message.text,
+                        "is_partial": True
+                    }
+            elif event_type == "message_start":
+                logger.debug("Message stream started")
+            elif event_type == "message_stop":
+                logger.debug("Message stream stopped")
+        
+        # Check if it has content like other messages
+        if hasattr(message, 'content'):
+            # Try to parse as a regular message
+            return None
+        
+        return None
+    
     def parse_message(self, message) -> Optional[Dict[str, Any]]:
         """Parse any SDK message type.
         
@@ -267,8 +301,12 @@ class SDKMessageParser:
                 # UserMessage can contain tool results!
                 logger.debug(f"Processing UserMessage - checking for tool results")
                 return self.parse_user_message(message)
+            elif message_type == "stream_event" or "stream" in message_type.lower():
+                # Handle streaming events
+                logger.debug(f"Detected stream event: {message_type}")
+                return self.parse_stream_event(message)
             else:
-                logger.warning(f"Unknown message type: {message_type}")
+                logger.warning(f"Unknown message type: {message_type}, attributes: {dir(message)[:10]}")
                 return None
         except Exception as e:
             logger.error(f"Error parsing message of type {message_type}: {e}")
