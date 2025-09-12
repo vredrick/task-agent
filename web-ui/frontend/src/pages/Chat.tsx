@@ -106,8 +106,8 @@ export default function Chat() {
           sessionId,
           (message: WSMessage) => {
             console.log('WebSocket message received:', message)
-            if (message.type === 'text' && message.content?.text) {
-              console.log('Adding text to currentResponse:', message.content.text)
+            if ((message.type === 'text' || message.type === 'text_delta') && message.content?.text) {
+              console.log(`Adding ${message.type} to currentResponse:`, message.content.text)
               
               // If we have a current message ID, update that message directly
               if (currentMessageId) {
@@ -119,7 +119,7 @@ export default function Chat() {
                     updated[existingIndex] = {
                       ...updated[existingIndex],
                       content: updated[existingIndex].content + message.content.text,
-                      isStreaming: true
+                      isStreaming: false // Disable artificial streaming - backend provides real streaming
                     }
                     return updated
                   } else {
@@ -128,7 +128,7 @@ export default function Chat() {
                       id: currentMessageId,
                       role: 'assistant',
                       content: message.content.text,
-                      isStreaming: true
+                      isStreaming: false // Disable artificial streaming
                     }]
                   }
                 })
@@ -138,8 +138,8 @@ export default function Chat() {
               }
               
               setPendingResponse(prev => prev + message.content.text) // Store for metadata
-            } else if (message.type === 'text') {
-              console.log('Text message but no content.text:', message)
+            } else if (message.type === 'text' || message.type === 'text_delta') {
+              console.log('Text/delta message but no content.text:', message)
             } else if (message.type === 'tool_use') {
               // Tool use received - finalize any current text and queue tool
               console.log('Tool use received:', message)
@@ -325,7 +325,7 @@ export default function Chat() {
                     id: textMessageId,
                     role: 'assistant',
                     content: currentResp,
-                    isStreaming: true  // Mark as streaming for animation
+                    isStreaming: false  // Disable artificial streaming - using real backend streaming
                   }])
                 }
                 return '' // Clear current response
@@ -384,7 +384,8 @@ export default function Chat() {
           () => {
             console.log('WebSocket closed')
             setLoading(false)
-          }
+          },
+          8001 // Use TypeScript backend on port 8001
         )
 
         await ws.connect()
@@ -492,7 +493,7 @@ export default function Chat() {
     id: 'streaming',
     role: 'assistant',
     content: currentResponse,
-    isStreaming: true
+    isStreaming: false // Disable artificial streaming
   } : null
 
   // Debug logging for streamingMessage and messages

@@ -119,31 +119,40 @@ This document outlines the phase-by-phase plan to implement a TypeScript-based b
 - ✅ Session persistence to `/tmp/task_agents_sessions_ts.json`
 - ✅ Test endpoint `/api/execute` for Phase 4 testing
 
-### Phase 5: WebSocket Streaming
+### Phase 5: WebSocket Streaming ✅
 **Goal**: Implement real-time streaming with partial message support
 
 **Tasks**:
-1. Set up WebSocket server using `ws` library
-2. Create `/ws/chat/:sessionId` endpoint matching Python
-3. Stream SDK responses with partial message deltas
-4. Match exact JSON message format of Python backend
-5. Implement interrupt/cancel handling
-6. Add connection management and cleanup
+1. ✅ Set up WebSocket server using `ws` library
+2. ✅ Create `/ws/chat/:sessionId` endpoint matching Python
+3. ✅ Stream SDK responses with partial message deltas
+4. ✅ Match exact JSON message format of Python backend
+5. ✅ Implement interrupt/cancel handling
+6. ✅ Add connection management and cleanup
 
 **Message Types to Support**:
-- `text` - Full text blocks
-- `text_delta` - Partial text streaming
-- `tool_use` - Tool invocations
-- `tool_result` - Tool responses
-- `metadata` - Session info
-- `error` - Error messages
+- ✅ `text` - Full text blocks
+- ✅ `text_delta` - Partial text streaming
+- ✅ `tool_use` - Tool invocations
+- ✅ `tool_result` - Tool responses
+- ✅ `metadata` - Session info
+- ✅ `error` - Error messages
 
 **Deliverables**:
-- [ ] WebSocket handler in `backend-ts/src/server.ts`
-- [ ] Message streaming from SDK
-- [ ] Partial message support (`content_block_delta`)
-- [ ] Interrupt/cancel support
-- [ ] Connection lifecycle management
+- ✅ WebSocket handler in `backend-ts/src/server.ts`
+- ✅ Message streaming from SDK
+- ✅ Partial message support (`content_block_delta`)
+- ✅ Interrupt/cancel support
+- ✅ Connection lifecycle management
+
+**Implementation Details**:
+- WebSocket server created with path `/ws`
+- Session ID extracted from URL `/chat/:sessionId`
+- Active connections tracked with abort controllers
+- SDK messages transformed to frontend format
+- Real streaming via `text_delta` messages
+- Frontend artificial streaming disabled
+- Interrupt handling via abort controller
 
 ### Phase 6: Frontend Configuration
 **Goal**: Allow frontend to switch between backends

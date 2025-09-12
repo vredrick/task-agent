@@ -6,7 +6,7 @@
 
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
 import path from 'path';
 import dotenv from 'dotenv';
@@ -173,30 +173,254 @@ const server = http.createServer(app);
 // Create WebSocket server
 const wss = new WebSocketServer({ 
   server,
-  path: '/ws' // Will handle /ws/chat/:sessionId later
+  path: '/ws'
 });
 
-// WebSocket connection handler (placeholder)
-wss.on('connection', (ws) => {
-  console.log('New WebSocket connection');
+// Active WebSocket connections mapped by session ID
+const activeConnections = new Map<string, { ws: WebSocket; abortController: AbortController }>();
+
+// WebSocket connection handler
+wss.on('connection', (ws, req) => {
+  // Extract session ID from URL path
+  const url = req.url || '';
+  const pathMatch = url.match(/^\/chat\/([^?]+)/);
+  const sessionId = pathMatch ? pathMatch[1] : null;
   
-  ws.on('message', (message) => {
-    console.log('Received:', message.toString());
-    // TODO: Implement agent execution
+  if (!sessionId) {
     ws.send(JSON.stringify({
-      type: 'info',
-      content: { text: 'TypeScript backend connected (not yet implemented)' }
+      type: 'error',
+      content: { text: 'Session ID required in path: /ws/chat/:sessionId' }
     }));
+    ws.close();
+    return;
+  }
+  
+  console.log(`New WebSocket connection for session: ${sessionId}`);
+  
+  // Create abort controller for this connection
+  const abortController = new AbortController();
+  activeConnections.set(sessionId, { ws, abortController });
+  
+  // Send initial connection confirmation
+  ws.send(JSON.stringify({
+    type: 'metadata',
+    content: {
+      session_id: sessionId,
+      backend: 'typescript',
+      connected: true,
+      timestamp: new Date().toISOString()
+    }
+  }));
+  
+  ws.on('message', async (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      console.log('Received message:', data);
+      
+      // Handle different message types
+      switch (data.type) {
+        case 'chat':
+          await handleChatMessage(ws, sessionId, data, abortController);
+          break;
+        case 'interrupt':
+          handleInterrupt(sessionId);
+          break;
+        case 'ping':
+          ws.send(JSON.stringify({ type: 'pong' }));
+          break;
+        default:
+          ws.send(JSON.stringify({
+            type: 'error',
+            content: { text: `Unknown message type: ${data.type}` }
+          }));
+      }
+    } catch (error: any) {
+      console.error('WebSocket message error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        content: { text: error.message || 'Failed to process message' }
+      }));
+    }
   });
   
   ws.on('close', () => {
-    console.log('WebSocket connection closed');
+    console.log(`WebSocket connection closed for session: ${sessionId}`);
+    // Clean up and abort any running operations
+    const connection = activeConnections.get(sessionId);
+    if (connection) {
+      connection.abortController.abort();
+      activeConnections.delete(sessionId);
+    }
   });
   
   ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
+    console.error(`WebSocket error for session ${sessionId}:`, error);
   });
 });
+
+// Handle chat messages
+async function handleChatMessage(
+  ws: WebSocket,
+  sessionId: string,
+  data: any,
+  abortController: AbortController
+) {
+  const { agentName, prompt, sessionReset, maxTurns } = data;
+  
+  if (!agentName || !prompt) {
+    ws.send(JSON.stringify({
+      type: 'error',
+      content: { text: 'Missing required fields: agentName and prompt' }
+    }));
+    return;
+  }
+  
+  const agent = agentManager.getAgent(agentName);
+  if (!agent) {
+    ws.send(JSON.stringify({
+      type: 'error',
+      content: { text: `Agent "${agentName}" not found` }
+    }));
+    return;
+  }
+  
+  try {
+    // Execute agent with streaming
+    const generator = await sdkExecutor.executeAgent(agent, prompt, {
+      sessionId,
+      sessionReset,
+      maxTurns,
+      includePartialMessages: true, // Always enable for WebSocket streaming
+      abortController
+    });
+    
+    // Stream messages to client
+    for await (const message of generator) {
+      // Transform SDK message to frontend format
+      const frontendMessage = transformSDKMessage(message);
+      if (frontendMessage) {
+        ws.send(JSON.stringify(frontendMessage));
+      }
+    }
+    
+    // Send completion signal
+    ws.send(JSON.stringify({
+      type: 'metadata',
+      content: {
+        event: 'stream_complete',
+        session_id: sessionId,
+        timestamp: new Date().toISOString()
+      }
+    }));
+    
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      ws.send(JSON.stringify({
+        type: 'metadata',
+        content: {
+          event: 'stream_interrupted',
+          session_id: sessionId
+        }
+      }));
+    } else {
+      ws.send(JSON.stringify({
+        type: 'error',
+        content: { text: error.message || 'Execution failed' }
+      }));
+    }
+  }
+}
+
+// Handle interrupt requests
+function handleInterrupt(sessionId: string) {
+  const connection = activeConnections.get(sessionId);
+  if (connection) {
+    console.log(`Interrupting session: ${sessionId}`);
+    connection.abortController.abort();
+    connection.ws.send(JSON.stringify({
+      type: 'metadata',
+      content: {
+        event: 'interrupt_acknowledged',
+        session_id: sessionId
+      }
+    }));
+  }
+}
+
+// Transform SDK messages to frontend format
+function transformSDKMessage(sdkMessage: SDKMessage): any {
+  switch (sdkMessage.type) {
+    case 'text':
+      return {
+        type: 'text',
+        content: { text: sdkMessage.text }
+      };
+    
+    case 'text_delta':
+      return {
+        type: 'text_delta',
+        content: { text: sdkMessage.text }
+      };
+    
+    case 'tool_use':
+      return {
+        type: 'tool_use',
+        content: {
+          tool_name: sdkMessage.tool_name,
+          tool_params: sdkMessage.tool_params
+        }
+      };
+    
+    case 'tool_result':
+      return {
+        type: 'tool_result',
+        content: {
+          tool_name: sdkMessage.tool_name,
+          result: sdkMessage.result,
+          is_error: sdkMessage.is_error
+        }
+      };
+    
+    case 'system':
+      if (sdkMessage.subtype === 'init') {
+        return {
+          type: 'metadata',
+          content: {
+            event: 'session_init',
+            session_id: sdkMessage.session_id,
+            model: sdkMessage.model
+          }
+        };
+      } else if (sdkMessage.subtype === 'usage') {
+        return {
+          type: 'metadata',
+          content: {
+            event: 'usage',
+            ...sdkMessage.usage
+          }
+        };
+      }
+      break;
+    
+    case 'stream_event':
+      // Handle specific stream events if needed
+      if (sdkMessage.event === 'content_block_delta' && sdkMessage.delta?.text) {
+        return {
+          type: 'text_delta',
+          content: { text: sdkMessage.delta.text }
+        };
+      }
+      break;
+    
+    case 'error':
+      return {
+        type: 'error',
+        content: { text: sdkMessage.error }
+      };
+  }
+  
+  return null; // Filter out unhandled message types
+}
 
 // Start server
 server.listen(PORT, () => {
@@ -210,7 +434,7 @@ server.listen(PORT, () => {
 ║  WebSocket:   ws://localhost:${PORT}/ws/chat/:sessionId       ║
 ║  Agents Path: ${AGENTS_PATH.padEnd(45, ' ')}║
 ║                                                            ║
-║  Status: Ready for Phase 2 implementation                 ║
+║  Status: Phase 5 - WebSocket Streaming Active             ║
 ╚════════════════════════════════════════════════════════════╝
   `);
 });
