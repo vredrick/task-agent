@@ -2,7 +2,7 @@
 
 ## 🎯 Quick Context
 
-You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v4.0.0 with simplified architecture - no built-in agents, only user-defined ones. **NEW**: Web UI with direct SDK integration for browser-based agent interaction!
+You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v5.0.0 with dual SDK architecture - both Python and TypeScript backends for maximum flexibility. **NEW**: TypeScript backend with @anthropic-ai/claude-code SDK providing enhanced session management and real-time streaming!
 
 ### Key Architecture Points
 - Each agent = separate MCP tool (e.g., `analyst`, `dev`, `qa`)
@@ -10,9 +10,12 @@ You're working with a **multi-tool MCP server** where each user-defined AI agent
 - Ships with `example-agent.md` template
 - Tool names: lowercase with underscores (e.g., "Code Reviewer" → `code_reviewer`)
 - Built on FastMCP with dynamic tool registration
-- Python 3.11+ required
-- **Web UI**: React frontend + FastAPI backend with WebSocket streaming
-- **SDK Integration**: Direct agent execution without MCP overhead
+- Python 3.11+ required for MCP server
+- **Web UI**: React frontend with choice of backends:
+  - **TypeScript Backend** (port 8001): Express + WebSocket with @anthropic-ai/claude-code SDK v1.0.112
+  - **Python Backend** (port 8000): FastAPI + WebSocket with subprocess SDK
+- **Session Architecture**: Backend-managed sessions with connectionId → sdkSessionId mapping
+- **SDK Integration**: Direct agent execution without MCP overhead in both Python and TypeScript
 
 ## 📁 Project Structure
 
@@ -20,17 +23,22 @@ You're working with a **multi-tool MCP server** where each user-defined AI agent
 task-agent/
 ├── src/                     
 │   ├── task_agents_mcp/     # MCP server implementation
-│   │   ├── __init__.py      # Version: 4.0.0
+│   │   ├── __init__.py      # Version: 5.0.0
 │   │   ├── server.py        # Multi-tool MCP server (main entry)
 │   │   ├── agent_manager.py # Agent loader/executor
 │   │   ├── resource_manager.py # MCP resource registration
 │   │   └── session_store.py # Session management
-│   └── sdk_integration/     # Direct SDK execution layer
+│   └── sdk_integration/     # Direct SDK execution layer (Python)
 │       ├── agent_executor.py # High-level agent management
-│       └── sdk_executor.py  # Claude SDK integration
-├── web-ui/                  # Web interface (NEW!)
-│   ├── backend/            # FastAPI + WebSocket server
-│   └── frontend/           # React + TypeScript UI
+│       └── sdk_executor.py  # Claude SDK integration (subprocess)
+├── web-ui/                  # Web interface with dual backend support
+│   ├── backend/            # Python: FastAPI + WebSocket server (port 8000)
+│   ├── backend-ts/         # TypeScript: Express + WebSocket (port 8001)
+│   │   ├── src/
+│   │   │   └── server.ts   # Main TypeScript server with session management
+│   │   ├── package.json    # Dependencies including @anthropic-ai/claude-code
+│   │   └── tsconfig.json   # TypeScript configuration
+│   └── frontend/           # React + TypeScript UI (port 5173)
 ├── task-agents/            # User agent configs (ships with example)
 │   └── example-agent.md    # Template showing agent structure
 ├── pyproject.toml          # Package config (name: task-agents-mcp)
@@ -44,9 +52,10 @@ task-agent/
 ### Package Info
 - **PyPI Name**: `task-agents-mcp`
 - **Command**: `task-agent` (no 's' at end!)
-- **Current Version**: 4.0.0
+- **Current Version**: 5.0.0
 - **Entry Point**: `task_agents_mcp.server:main`
-- **Python Requirement**: 3.11+
+- **Python Requirement**: 3.11+ (MCP server)
+- **Node Requirement**: 18+ (TypeScript backend)
 
 ### Tool Registration Flow
 ```python
@@ -71,24 +80,61 @@ agent_manager = AgentManager(config_dir)
 agent_manager.load_agents()
 ```
 
-## 🌐 Web UI (NEW!)
+## 🌐 Web UI Architecture
 
 ### Quick Start
 ```bash
 cd web-ui
-./start.sh  # Starts both backend and frontend
-# Open http://localhost:5173 in your browser
+
+# Option 1: Use TypeScript backend (recommended)
+cd backend-ts && npm run dev  # Port 8001
+cd ../frontend && npm run dev  # Port 5173
+
+# Option 2: Use Python backend
+cd backend && python server.py  # Port 8000
+cd ../frontend && npm run dev   # Port 5173
+
+# Or use the convenience script:
+./start.sh  # Starts Python backend + frontend
+```
+
+### Session Management Architecture
+
+The Web UI implements a sophisticated two-tier session system:
+
+1. **Connection ID**: Frontend-generated UUID for WebSocket connections
+   - Format: `/ws/chat/{connectionId}`
+   - Tracks individual browser connections
+   - Persists only for WebSocket lifetime
+
+2. **SDK Session ID**: Backend-managed conversation continuity
+   - Created on first SDK response
+   - Mapped to Connection ID by backend
+   - Enables conversation history across messages
+   - Can be reset via `session_reset` parameter
+
+```typescript
+// Backend session tracking (TypeScript)
+interface ConnectionInfo {
+  ws: WebSocket;
+  sdkSessionId: string | null;  // SDK session for continuity
+  agentName: string | null;
+}
+
+// Mapping: connectionId → sdkSessionId
+const connectionToSDKSession = new Map<string, string | null>();
 ```
 
 ### Features
-- Visual agent selection interface with card-based layout
-- Real-time streaming chat with word-by-word animation (40ms/word)
-- Rich markdown rendering with syntax-highlighted code blocks
-- Tool usage visualization with dark blue accent theme
-- Session management with reset capability
-- Direct SDK integration (no MCP overhead)
-- Custom AI Elements components for professional UI
-- Smooth text streaming that fills processing gaps
+- **Dual Backend Support**: Choose between TypeScript or Python backends
+- **Visual agent selection**: Card-based interface with agent descriptions
+- **Real-time streaming**: WebSocket with `includePartialMessages` for smooth text flow
+- **Rich markdown rendering**: Syntax-highlighted code blocks with copy functionality
+- **Tool usage visualization**: Dark blue accent theme for tool interactions
+- **Session management**: Backend-controlled with reset capability
+- **Direct SDK integration**: No MCP overhead for web interactions
+- **Custom AI Elements**: Professional UI components
+- **Smooth text streaming**: 40ms/word animation with gap filling
 
 ## 📝 Common User Tasks
 
@@ -170,20 +216,27 @@ python3.11 -m build
 python3.11 -m twine upload dist/*
 ```
 
-## 🎯 Key Changes in v4.0.0
+## 🎯 Key Changes in v5.0.0
 
-### What Changed
+### What's New
+- **TypeScript Backend**: Full Express + WebSocket implementation with @anthropic-ai/claude-code SDK
+- **Dual Backend Support**: Choose between Python (port 8000) or TypeScript (port 8001)
+- **Enhanced Session Management**: Backend-managed SDK sessions with proper connectionId mapping
+- **Real-time Streaming**: WebSocket with `includePartialMessages` for smooth text flow
+- **TypeScript SDK Integration**: Native Claude Code SDK v1.0.112 support
+- **Improved Architecture**: Clear separation between connection and session management
+
+### v4.0.0 Changes (Previous)
 - **Removed**: Built-in agents directory (`src/task_agents_mcp/agents/`)
 - **Removed**: Dual-directory loading logic
 - **Added**: Example agent template in `task-agents/`
 - **Simplified**: Only loads from one agents directory
 - **Standardized**: Python 3.11+ requirement
 
-### Migration from v3.x
-Users upgrading from v3.x need to:
-1. Copy any BMad agents they want from examples
-2. Place them in their `task-agents/` directory
-3. No other changes needed
+### Migration Notes
+- **From v4.x**: Web UI frontend now defaults to TypeScript backend on port 8001
+- **From v3.x**: Copy any BMad agents to `task-agents/` directory
+- **Backend Choice**: Update frontend config to point to desired backend port
 
 ## 💡 Implementation Details
 
@@ -202,9 +255,70 @@ resource_uri = f"{sanitized_name}://"
 ```
 
 ### Session Management
-- Sessions stored in `/tmp/task_agents_sessions.json`
+- **Python Backend**: Sessions stored in `/tmp/task_agents_sessions.json`
+- **TypeScript Backend**: In-memory session tracking with SDK session IDs
 - Each agent can maintain conversation context
 - `session_reset` parameter available for agents with `resume-session: true`
+
+### TypeScript SDK Integration
+
+The TypeScript backend uses the official `@anthropic-ai/claude-code` SDK:
+
+```typescript
+import { ClaudeCodeClient } from '@anthropic-ai/claude-code';
+
+// Initialize SDK with OAuth credentials
+const client = new ClaudeCodeClient({
+  credentialsPath: '~/.claude/.credentials'
+});
+
+// Execute agent with streaming
+const generator = await client.execute({
+  agentConfig,
+  prompt,
+  sessionId,  // SDK session for continuity
+  includePartialMessages: true  // Enable text_delta streaming
+});
+
+// Stream responses via WebSocket
+for await (const event of generator) {
+  if (event.type === 'text_delta') {
+    ws.send(JSON.stringify({
+      type: 'stream',
+      content: { text: event.text }
+    }));
+  }
+}
+```
+
+### WebSocket Protocol
+
+Both backends implement the same WebSocket protocol:
+
+```javascript
+// Frontend → Backend
+{
+  type: 'chat',
+  agentName: 'example_agent',
+  prompt: 'User message',
+  sessionReset?: boolean,
+  maxTurns?: number
+}
+
+// Backend → Frontend
+{
+  type: 'stream',        // Streaming text
+  content: { text: '...' }
+}
+{
+  type: 'tool_use',      // Tool execution
+  content: { tool: '...', input: {...} }
+}
+{
+  type: 'metadata',      // Connection info
+  content: { connection_id: '...', has_session: true }
+}
+```
 
 ## 🚨 Important Reminders
 
@@ -212,13 +326,24 @@ resource_uri = f"{sanitized_name}://"
    - Package: `task-agents-mcp` (with 's')
    - Command: `task-agent` (no 's')
 
-2. **Python version**: Must use Python 3.11+
+2. **Language requirements**:
+   - Python 3.11+ for MCP server and Python backend
+   - Node.js 18+ for TypeScript backend
 
-3. **Empty default**: Ships with only example template, not functional agents
+3. **Backend choice**:
+   - **TypeScript (port 8001)**: Recommended for production, native SDK integration
+   - **Python (port 8000)**: Legacy support, subprocess-based SDK
 
-4. **Project scope**: Recommend `-s project` for Claude Code
+4. **Session handling**:
+   - Frontend uses `connectionId` (UUID per WebSocket)
+   - Backend manages `sdkSessionId` (conversation continuity)
+   - Never expose SDK session IDs to frontend
 
-5. **Agent names**: Spaces become underscores in tool names
+5. **Empty default**: Ships with only example template, not functional agents
+
+6. **Project scope**: Recommend `-s project` for Claude Code
+
+7. **Agent names**: Spaces become underscores in tool names
 
 ## 📍 Navigation Guide
 
@@ -233,8 +358,11 @@ For detailed information about specific components, see:
 
 - **[/web-ui/CLAUDE.md](/home/vredrick/task-agent/web-ui/CLAUDE.md)** - Web UI documentation
   - Frontend React architecture
-  - Backend FastAPI implementation
+  - Dual backend implementations:
+    - Python: FastAPI + subprocess SDK
+    - TypeScript: Express + @anthropic-ai/claude-code SDK
   - WebSocket streaming protocol
+  - Session management architecture
   - Development and deployment guide
 
 ### Quick Navigation by Task
@@ -246,7 +374,11 @@ For detailed information about specific components, see:
 → See `/web-ui/CLAUDE.md` for frontend/backend details
 
 **Need SDK integration details?**
-→ Check `/src/CLAUDE.md` SDK Integration section
+→ Python SDK: Check `/src/CLAUDE.md` SDK Integration section
+→ TypeScript SDK: See `/web-ui/backend-ts/src/server.ts` implementation
+
+**Working with the TypeScript backend?**
+→ See session management in this file's TypeScript SDK Integration section
 
 **Setting up agent configurations?**
 → Review agent format in this file and examples in `task-agents/`

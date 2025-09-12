@@ -15,10 +15,16 @@ src/
 │   ├── resource_manager.py # MCP resource registration
 │   ├── session_store.py    # Conversation session persistence
 │   └── cli.py              # Command-line interface and aliases
-└── sdk_integration/         # Direct SDK execution layer
-    ├── __init__.py         # Package exports
-    ├── agent_executor.py   # High-level agent management
-    └── sdk_executor.py     # Claude SDK integration
+├── sdk_integration/         # Python SDK execution layer
+│   ├── __init__.py         # Package exports
+│   ├── agent_executor.py   # High-level agent management
+│   └── sdk_executor.py     # Claude SDK integration
+└── sdk_integration_ts/      # TypeScript SDK execution layer
+    ├── agent_manager.ts    # Agent loading from .md files
+    ├── sdk_executor.ts     # Claude SDK with session management
+    ├── session_store.ts    # Session persistence (TypeScript)
+    ├── oauth_handler.ts    # OAuth credential management
+    └── index.ts            # Barrel exports for clean API
 ```
 
 ## Key Components
@@ -66,7 +72,7 @@ src/
   - Interactive REPL mode
   - Direct agent invocation
 
-### SDK Integration Layer (`sdk_integration/`)
+### Python SDK Integration Layer (`sdk_integration/`)
 
 #### agent_executor.py
 - **Purpose**: High-level interface for agent management
@@ -97,6 +103,82 @@ src/
   - Creates a conversation chain for context continuity
   - Only works when agent has `resume-session: true`
 
+### TypeScript SDK Integration Layer (`sdk_integration_ts/`)
+
+#### agent_manager.ts
+- **Purpose**: Load and parse agent configurations from `.md` files
+- **Key Classes**:
+  - `AgentConfig`: Interface matching Python's Pydantic model
+  - `AgentManager`: TypeScript agent loader
+- **Features**:
+  - YAML frontmatter parsing
+  - Agent validation
+  - Support for `maxTurns` configuration
+  - Directory scanning for `.md` files
+- **Agent Discovery**: Mirrors Python implementation
+
+#### sdk_executor.ts
+- **Purpose**: TypeScript Claude SDK integration
+- **Key Class**: `SDKExecutor`
+- **Features**:
+  - OAuth credential management
+  - Tool registration and invocation
+  - Streaming with `includePartialMessages: true`
+  - Session ID extraction from system/init messages
+  - Session chaining for conversation continuity
+- **Session Management Pattern**:
+  ```typescript
+  // Extract session ID from initial response
+  if (chunk.type === 'event' && chunk.event.type === 'system' ||
+      chunk.type === 'event' && chunk.event.type === 'init') {
+    const sessionId = chunk.event.session_id;
+    // Store for next message in chain
+  }
+  ```
+- **Streaming Configuration**:
+  - Word-by-word animation (40ms/word)
+  - Partial message support for smooth UX
+  - Fills processing gaps with continuous text flow
+
+#### session_store.ts
+- **Purpose**: TypeScript session persistence
+- **Storage**: JSON file at `/tmp/task_agents_sessions_ts.json`
+- **Key Class**: `SessionStore`
+- **Features**:
+  - Session save/load operations
+  - Session chaining support
+  - Timestamp tracking
+  - Mirrors Python session store API
+- **Session Structure**:
+  ```typescript
+  interface SessionData {
+    messages: Message[];
+    context: Record<string, any>;
+    timestamp: string;
+    nextSessionId?: string;  // For chaining
+  }
+  ```
+
+#### oauth_handler.ts
+- **Purpose**: Manage OAuth credentials for TypeScript SDK
+- **Key Class**: `OAuthHandler`
+- **Features**:
+  - Credential loading from `.claude/` directory
+  - Token validation
+  - Refresh token handling
+  - Shared credential paths with Python SDK
+- **Integration**: Used by SDKExecutor for authentication
+
+#### index.ts
+- **Purpose**: Barrel exports for clean API surface
+- **Exports**:
+  - `AgentManager` - Agent configuration loading
+  - `SDKExecutor` - Claude SDK execution
+  - `SessionStore` - Session persistence
+  - `OAuthHandler` - OAuth management
+  - Type definitions (`AgentConfig`, `SessionData`, etc.)
+- **Usage**: Single import point for TypeScript consumers
+
 ## Patterns & Conventions
 
 ### Agent Configuration Format
@@ -126,6 +208,8 @@ System prompt content here...
 ```
 
 ### Session Management Pattern
+
+#### Python Implementation
 ```python
 # Session key format
 session_key = f"{agent_name}_{session_id}"
@@ -134,23 +218,60 @@ session_key = f"{agent_name}_{session_id}"
 {
     "messages": [...],
     "context": {...},
-    "timestamp": "..."
+    "timestamp": "...",
+    "next_session_id": "..."  # For chaining
 }
 ```
 
+#### TypeScript Implementation
+```typescript
+// Session extraction from SDK response
+const extractSessionId = (chunk: SDKChunk) => {
+  if (chunk.type === 'event') {
+    if (chunk.event.type === 'system' || chunk.event.type === 'init') {
+      return chunk.event.session_id;
+    }
+  }
+  return null;
+};
+
+// Session chaining for context continuity
+const chainSessions = async (previousId: string, newId: string) => {
+  const previousSession = await sessionStore.getSession(previousId);
+  await sessionStore.saveSession(newId, {
+    ...previousSession,
+    nextSessionId: newId
+  });
+};
+```
+
+#### Session Storage Locations
+- **Python**: `/tmp/task_agents_sessions.json`
+- **TypeScript**: `/tmp/task_agents_sessions_ts.json`
+- **Format**: JSON with agent-prefixed keys
+- **Persistence**: Ephemeral (cleared on system restart)
+
 ## Dependencies
 
-### External Packages
+### Python Packages
 - `fastmcp>=0.1.0` - MCP server framework
 - `pydantic>=2.0` - Data validation
 - `PyYAML>=6.0` - YAML parsing
 - `anthropic>=0.8.0` - Claude SDK
 - `click>=8.0` - CLI framework
 
+### TypeScript Packages
+- `@anthropic-ai/claude-sdk` - Claude TypeScript SDK
+- `yaml` - YAML parsing for agent configs
+- `gray-matter` - Frontmatter extraction
+- `glob` - File pattern matching
+- TypeScript 5.0+ with strict mode
+
 ### Internal Dependencies
 - Agent configurations from `task-agents/` directory
 - OAuth credentials from `.claude/` directory
-- Python 3.11+ for all components
+- Python 3.11+ for Python components
+- Node.js 18+ for TypeScript components
 
 ## Usage Examples
 
@@ -161,7 +282,7 @@ from task_agents_mcp.server import main
 main()  # Starts MCP server
 ```
 
-### Using SDK Integration
+### Using Python SDK Integration
 ```python
 from sdk_integration import AgentExecutor
 
@@ -177,6 +298,41 @@ async for chunk in executor.stream_agent_response(
     print(chunk)
 ```
 
+### Using TypeScript SDK Integration
+```typescript
+import { AgentManager, SDKExecutor, SessionStore } from './sdk_integration_ts';
+
+// Initialize components
+const agentManager = new AgentManager('./task-agents');
+await agentManager.loadAgents();
+
+const sessionStore = new SessionStore('/tmp/task_agents_sessions_ts.json');
+const executor = new SDKExecutor(agentConfig, sessionStore);
+
+// Stream agent response with session chaining
+const stream = await executor.streamResponse(
+  message,
+  sessionId,
+  { includePartialMessages: true }
+);
+
+let nextSessionId: string | null = null;
+for await (const chunk of stream) {
+  // Extract session ID for chaining
+  if (chunk.type === 'event' && 
+      (chunk.event.type === 'system' || chunk.event.type === 'init')) {
+    nextSessionId = chunk.event.session_id;
+  }
+  
+  // Process content
+  if (chunk.type === 'content') {
+    console.log(chunk.content);
+  }
+}
+
+// Use nextSessionId for the next message in conversation
+```
+
 ## Environment Variables
 
 - `TASK_AGENTS_PATH`: Custom agents directory
@@ -186,48 +342,93 @@ async for chunk in executor.stream_agent_response(
 ## Development Guidelines
 
 ### Adding New Features
-1. SDK integration for direct execution
-2. MCP server for protocol compliance
-3. Both layers share agent configurations
+1. Implement in both Python and TypeScript SDK layers
+2. Maintain MCP server for protocol compliance
+3. Ensure both SDK implementations mirror each other
+4. Share agent configuration format across all layers
 
 ### Testing Components
+
+#### Python Components
 ```bash
 # Test MCP server
 python -m task_agents_mcp.server
 
-# Test SDK integration
+# Test Python SDK integration
 python -c "from sdk_integration import AgentExecutor; print('OK')"
 
 # Test agent loading
 python -m task_agents_mcp.agent_manager
 ```
 
+#### TypeScript Components
+```bash
+# Build TypeScript
+cd src/sdk_integration_ts
+npm run build
+
+# Test TypeScript SDK
+npm test
+
+# Test agent loading
+node -e "const { AgentManager } = require('./dist'); console.log('OK')"
+```
+
 ### Code Organization
 - Keep MCP and SDK layers separate
-- Share agent configuration models
+- Mirror functionality between Python and TypeScript SDKs
+- Share agent configuration format (YAML frontmatter)
 - Maintain backward compatibility
+- Use consistent session management patterns
+
+### SDK Implementation Guidelines
+1. **Session Management**: Both SDKs must support session chaining
+2. **Streaming**: Include partial messages for smooth UX
+3. **Error Handling**: Graceful fallbacks for missing sessions
+4. **Tool Registration**: Dynamic based on agent config
+5. **OAuth**: Share credential locations between SDKs
 
 ## Important Constraints
 
-1. **Python Version**: Requires 3.11+ for all components
+1. **Language Versions**: 
+   - Python 3.11+ for Python components
+   - Node.js 18+ for TypeScript components
+   - TypeScript 5.0+ with strict mode
 2. **Agent Format**: Must use YAML frontmatter in `.md` files
 3. **Tool Names**: Automatically sanitized (no manual control)
-4. **Session Storage**: Ephemeral in `/tmp` directory
-5. **OAuth Required**: SDK integration needs valid credentials
+4. **Session Storage**: 
+   - Ephemeral in `/tmp` directory
+   - Separate files for Python and TypeScript
+5. **OAuth Required**: Both SDK integrations need valid credentials
+6. **Session Chaining**: Only works with `resume-session: true` agents
 
 ## Troubleshooting
 
-### Import Errors
+### Python Import Errors
 - Ensure `PYTHONPATH` includes src directory
 - Check Python version is 3.11+
+- Verify package installation: `pip show task-agents-mcp`
+
+### TypeScript Build Errors
+- Check Node.js version is 18+
+- Run `npm install` in src/sdk_integration_ts
+- Verify TypeScript version: `npx tsc --version`
 
 ### Agent Loading Issues
 - Verify `.md` files have valid YAML frontmatter
 - Check `TASK_AGENTS_PATH` environment variable
+- Ensure agent files are readable
 
 ### SDK Authentication
 - Verify OAuth credentials exist and are valid
 - Check file permissions on `.claude/` directory
+- Credentials shared between Python and TypeScript SDKs
+
+### Session Management Issues
+- Check `/tmp` directory permissions
+- Verify session files aren't corrupted
+- Session IDs must match between messages
+- TypeScript uses different session file than Python
 
 ## Related Documentation
 

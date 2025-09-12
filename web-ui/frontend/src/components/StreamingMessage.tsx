@@ -1,7 +1,6 @@
 import React from 'react'
 import { Response } from '@/components/ai-elements/response'
 import { CodeBlock, CodeBlockCopyButton } from '@/components/ai-elements/code-block'
-import { useStreamingText } from '@/hooks/useStreamingText'
 
 interface StreamingMessageProps {
   content: string
@@ -10,19 +9,9 @@ interface StreamingMessageProps {
 }
 
 export function StreamingMessage({ content, isStreaming = false, className }: StreamingMessageProps) {
-  // Use the streaming hook to animate text
-  // Since tools now wait for text to complete, we can use a more
-  // comfortable reading speed
-  const { displayedText, isAnimating } = useStreamingText(
-    content,
-    isStreaming,
-    {
-      wordDelay: 40, // Slightly slower for more comfortable reading
-      characterMode: false, // Word by word
-      bufferMode: true // Smooth chunk boundaries
-    }
-  )
-
+  // Response component with Streamdown handles streaming natively
+  // parseIncompleteMarkdown automatically handles partial markdown during streaming
+  
   return (
     <>
       <Response 
@@ -56,7 +45,7 @@ export function StreamingMessage({ content, isStreaming = false, className }: St
           }
         }}
       >
-        {displayedText}
+        {content}
       </Response>
     </>
   )

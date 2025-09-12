@@ -2,18 +2,23 @@
 
 ## Purpose
 
-This directory contains a modern web interface for interacting with task agents through direct SDK integration. The UI provides a user-friendly alternative to CLI interaction, offering real-time streaming responses with word-by-word animation, session management, and visual feedback for agent operations.
+This directory contains a modern web interface for interacting with task agents through direct SDK integration. The UI provides a user-friendly alternative to CLI interaction, offering real-time streaming responses with word-by-word animation, backend-managed session persistence, and visual feedback for agent operations.
 
 ## Architecture Overview
 
-The Web UI implements a client-server architecture with WebSocket support for real-time streaming:
+The Web UI implements a clean client-server architecture with complete separation of concerns:
 
 ```
 web-ui/
-├── backend/          # FastAPI server with SDK integration
-│   ├── main.py      # API endpoints, WebSocket handler, agent executor
+├── backend-ts/       # TypeScript backend (PORT 8001) - PRIMARY
+│   ├── src/
+│   │   └── server.ts     # Express + WebSocket server with SDK integration
+│   ├── package.json      # Dependencies including @anthropic-ai/claude-code
+│   └── tsconfig.json     # TypeScript configuration
+├── backend/          # Python FastAPI backend (PORT 8000) - LEGACY
+│   ├── main.py      # API endpoints, WebSocket handler
 │   └── venv/        # Python virtual environment
-└── frontend/        # React TypeScript application
+└── frontend/        # React TypeScript application (PORT 5173)
     ├── src/
     │   ├── pages/          # React page components
     │   ├── components/     # Reusable UI components
@@ -24,20 +29,58 @@ web-ui/
     └── dist/            # Production build output
 ```
 
+### Backend-Managed Sessions (NEW)
+
+The TypeScript backend completely manages SDK sessions, creating a clean separation of concerns:
+
+**Backend Responsibilities:**
+- Maintains `ConnectionInfo` for each WebSocket connection
+- Tracks SDK session IDs independently from connection IDs
+- Extracts and stores SDK session IDs from Claude's responses
+- Maps connectionId → sdkSessionId for session continuity
+- Updates session mapping after each agent response
+
+**Frontend Simplification:**
+- Uses `connectionId` only for WebSocket connection tracking
+- No session management logic or state
+- Pure presentation and UI interaction layer
+- Sends minimal data: `agentName`, `prompt`, `sessionReset`
+
 ## Key Components
 
-### Backend (FastAPI + SDK Integration)
+### TypeScript Backend (Express + @anthropic-ai/claude-code SDK)
 
-**main.py**
-- FastAPI application with CORS middleware
-- WebSocket endpoint for streaming chat (`/ws/chat/{session_id}`)
-- REST endpoints for agent operations:
-  - `GET /api/auth/status` - OAuth authentication check
+**server.ts (Port 8001)**
+- Express server with WebSocket support via `ws` library
+- Full streaming with `includePartialMessages: true` for real-time text deltas
+- Backend-managed session architecture:
+  ```typescript
+  interface ConnectionInfo {
+    ws: WebSocket;
+    abortController: AbortController;
+    sdkSessionId: string | null;  // SDK session for continuity
+    agentName: string | null;      // Current agent being used
+  }
+  ```
+- REST endpoints matching Python backend:
+  - `GET /api/health` - Backend health check
+  - `GET /api/info` - Backend information and features
+  - `GET /api/auth/status` - OAuth authentication status
   - `GET /api/agents` - List available agents
   - `GET /api/agents/{name}` - Get agent details
-  - `POST /api/chat` - Non-streaming chat endpoint
+  - `GET /api/sessions` - List active SDK sessions
+  - `DELETE /api/sessions/{id}` - Clear specific session
+- WebSocket endpoint: `/ws/chat/{connectionId}`
+- Direct integration with TypeScript SDK layer (`src/sdk_integration_ts/`)
+
+### Python Backend (FastAPI - Legacy)
+
+**main.py (Port 8000)**
+- FastAPI application with CORS middleware
+- WebSocket endpoint for streaming chat (`/ws/chat/{session_id}`)
+- REST endpoints for agent operations
 - Direct integration with `src/sdk_integration/agent_executor.py`
-- Session management for conversation continuity
+- Being phased out in favor of TypeScript backend
 
 ### Frontend (React + TypeScript + Tailwind)
 
@@ -80,10 +123,45 @@ web-ui/
 
 ## SDK Integration Flow
 
-1. **Agent Loading**: Backend imports `AgentExecutor` from `src/sdk_integration/`
-2. **Direct Execution**: No MCP server or containers needed
-3. **Streaming Response**: SDK executor streams through WebSocket
-4. **Session Persistence**: Maintains conversation context
+### TypeScript Backend Flow (backend-ts)
+
+1. **Agent Loading**: Backend imports `AgentManager` from `src/sdk_integration_ts/`
+2. **Session Chain Management**:
+   - Frontend sends chat with `connectionId` (WebSocket identifier)
+   - Backend looks up existing `sdkSessionId` for this connection
+   - Executes agent with SDK session ID (or null for new conversation)
+   - SDK returns new session ID in `system/init` message
+   - Backend updates `connectionInfo.sdkSessionId` for next message
+3. **Streaming Pipeline**:
+   - SDK configured with `includePartialMessages: true`
+   - Transforms `stream_event` → `text_delta` for frontend
+   - Filters duplicate messages (skips final complete `assistant` message)
+4. **Session Reset**: When `sessionReset: true`, clears stored SDK session
+
+### Message Flow Diagram
+
+```
+Frontend                    TypeScript Backend              Claude SDK
+   |                              |                              |
+   |-- Chat Message ------------->|                              |
+   |   {agentName, prompt}        |                              |
+   |                              |                              |
+   |                              |-- Check connectionInfo ------|
+   |                              |   Get sdkSessionId or null   |
+   |                              |                              |
+   |                              |-- Execute Agent ------------>|
+   |                              |   with sessionId             |
+   |                              |                              |
+   |                              |<-- Stream Events ------------|
+   |                              |   Including new session_id   |
+   |                              |                              |
+   |                              |-- Store new session_id ------|
+   |                              |   in connectionInfo          |
+   |                              |                              |
+   |<-- Text Deltas --------------|                              |
+   |    Real-time streaming       |                              |
+   |                              |                              |
+```
 
 ## Development Setup
 
@@ -93,11 +171,26 @@ web-ui/
 - Claude OAuth credentials in `~/.claude/.credentials.json`
 
 ### Quick Start
+
+#### TypeScript Backend (Recommended)
 ```bash
-# Option 1: Use the start script
-./start.sh
+# Option 1: Use the start script for TypeScript backend
+./start-ts.sh
 
 # Option 2: Manual setup
+# TypeScript Backend
+cd backend-ts
+npm install
+npm run dev  # Runs on port 8001
+
+# Frontend (configured for TypeScript backend)
+cd frontend
+npm install
+npm run dev  # Runs on port 5173, proxies to 8001
+```
+
+#### Python Backend (Legacy)
+```bash
 # Backend
 cd backend
 python3 -m venv venv
@@ -105,7 +198,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 python main.py  # Runs on port 8000
 
-# Frontend
+# Frontend (requires vite.config.ts update to proxy to 8000)
 cd frontend
 npm install
 npm run dev  # Runs on port 5173
@@ -113,20 +206,42 @@ npm run dev  # Runs on port 5173
 
 ## Configuration
 
-### Backend Configuration
+### TypeScript Backend Configuration
+- **Port**: 8001 (configured in server.ts)
+- **CORS Origins**: localhost:5173, localhost:3000
+- **Agent Path**: `../task-agents/` or `TASK_AGENTS_PATH` env var
+- **Session Storage**: In-memory with ConnectionInfo mapping
+- **SDK Version**: @anthropic-ai/claude-code v1.0.112
+- **Streaming**: Real-time with `includePartialMessages: true`
+
+### Python Backend Configuration (Legacy)
 - **Port**: 8000 (configured in main.py)
 - **CORS Origins**: localhost:5173, localhost:3000
 - **Agent Path**: `../task-agents/` (relative to backend)
-- **Session Storage**: In-memory (use Redis for production)
+- **Session Storage**: In-memory dictionary
 
 ### Frontend Configuration
-- **Vite Proxy**: Configured to forward API calls to backend
-- **WebSocket URL**: `ws://localhost:8000/ws/chat/{session_id}`
+- **Vite Proxy**: Configured to forward API calls to backend (port 8001 for TypeScript)
+- **WebSocket URL**: `ws://localhost:8001/ws/chat/{connectionId}` (TypeScript backend)
 - **Build Output**: `dist/` directory
+- **Connection Management**: Uses UUID for connectionId, backend handles SDK sessions
 
 ## Dependencies
 
-### Backend Requirements
+### TypeScript Backend Dependencies
+```json
+{
+  "@anthropic-ai/claude-code": "^1.0.112",  // Claude SDK with streaming
+  "express": "^4.18.2",                      // Web framework
+  "ws": "^8.16.0",                           // WebSocket server
+  "cors": "^2.8.5",                          // CORS middleware
+  "dotenv": "^16.3.1",                       // Environment variables
+  "typescript": "^5.3.3",                    // TypeScript compiler
+  "tsx": "^4.7.0"                           // TypeScript runner
+}
+```
+
+### Python Backend Requirements (Legacy)
 ```
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
@@ -208,44 +323,98 @@ Theme colors are defined using CSS variables for consistency:
 ## WebSocket Protocol
 
 ### Message Format
+
+#### Client → Server (Frontend to Backend)
 ```typescript
-// Client -> Server
 {
-  agent_name: string,
-  message: string,
-  session_reset?: boolean
+  type: "chat",           // Message type
+  agentName: string,      // Agent to use (kebab-case key)
+  prompt: string,         // User's message
+  sessionReset?: boolean, // Reset conversation context
+  maxTurns?: number       // Max conversation turns
+}
+```
+
+#### Server → Client (Backend to Frontend)
+```typescript
+// Text streaming delta
+{
+  type: "text_delta",
+  content: { text: string }  // Partial text chunk
 }
 
-// Server -> Client
+// Tool usage
 {
-  type: "text" | "tool_use" | "error" | "complete" | "metadata",
-  content?: {
-    text?: string        // For text chunks
-  },
-  name?: string,         // For tool use
-  input?: any,           // For tool use
-  error?: string,        // For errors
-  data?: {               // For metadata
-    cost: number,
-    duration: number,
-    tokens: number,
-    session_id: string
+  type: "tool_use" | "tool_result",
+  content: {
+    tool_name: string,
+    tool_params?: any,      // For tool_use
+    result?: any,           // For tool_result
+    is_error?: boolean      // For tool_result
   }
+}
+
+// Metadata events
+{
+  type: "metadata",
+  content: {
+    event: "session_init" | "usage" | "stream_complete",
+    session_id?: string,    // SDK session ID (not connection ID)
+    model?: string,
+    connection_id?: string,
+    has_session?: boolean,
+    // Usage data for "usage" event
+    input_tokens?: number,
+    output_tokens?: number,
+    total_tokens?: number
+  }
+}
+
+// Error messages
+{
+  type: "error",
+  content: { text: string }
 }
 ```
 
 ## Session Management
 
-- Sessions identified by UUID
-- Stored in backend memory (ephemeral)
-- Reset capability through UI button
-- Automatic cleanup on disconnect
-- **Session Resumption Chain**:
-  - Each SDK response includes a new `session_id`
-  - Backend extracts and stores this from metadata
-  - Next message uses the latest `session_id` for continuity
-  - Only active when agent has `resume-session: true`
-  - Creates conversation chains maintaining full context
+### Backend-Managed Architecture
+
+The TypeScript backend completely owns session management:
+
+1. **Connection Tracking**:
+   - Frontend generates a UUID `connectionId` for WebSocket connection
+   - Backend maintains `ConnectionInfo` object per connection
+   - Maps `connectionId` → `sdkSessionId` internally
+
+2. **Session Chain Flow**:
+   ```
+   Initial Message:
+   - Frontend sends: {agentName, prompt}
+   - Backend checks: connectionInfo.sdkSessionId (null for new)
+   - SDK executes with: sessionId: null
+   - SDK returns: new session_id in system/init
+   - Backend stores: connectionInfo.sdkSessionId = new_id
+   
+   Subsequent Messages:
+   - Frontend sends: {agentName, prompt}
+   - Backend checks: connectionInfo.sdkSessionId (has value)
+   - SDK executes with: sessionId: stored_id
+   - SDK returns: new session_id for next turn
+   - Backend updates: connectionInfo.sdkSessionId = new_id
+   ```
+
+3. **Session Reset**:
+   - Frontend sends: `sessionReset: true`
+   - Backend clears: `connectionInfo.sdkSessionId = null`
+   - Next message starts fresh conversation chain
+
+4. **Session Persistence**:
+   - Only active when agent has `resume-session: true` in config
+   - Each response generates new session ID for chaining
+   - Backend transparently manages the session chain
+   - Frontend remains stateless regarding sessions
 
 ## Security Considerations
 
@@ -283,9 +452,10 @@ For production deployment:
 
 **"Session not resuming / Context not maintained"**
 - Verify agent has `resume-session: true` in config
-- Check that backend is extracting session_id from metadata
-- Ensure frontend is maintaining WebSocket session UUID
-- Note: Each message gets a new session_id for chaining
+- Check backend logs for SDK session ID extraction
+- Confirm `connectionInfo.sdkSessionId` is being updated
+- Verify WebSocket connection isn't dropping between messages
+- Note: Each message creates a new SDK session ID that chains to the previous one
 
 ## Related Documentation
 

@@ -53,31 +53,9 @@ export default function Chat() {
   const [pendingTools, setPendingTools] = useState<any[]>([]) // Queue for tools waiting for text to finish
   const [isTextStreaming, setIsTextStreaming] = useState(false) // Track if text is currently streaming
   const [displayedTextLength, setDisplayedTextLength] = useState(0) // Track how much text has been displayed
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const chatContainerRef = useRef<HTMLDivElement>(null)
-
-  // Manual scroll to bottom
-  const scrollToBottom = () => {
-    // Try multiple methods to ensure scrolling works
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
-    } else if (chatContainerRef.current) {
-      const scrollElement = chatContainerRef.current.querySelector('[role="log"]')
-      if (scrollElement) {
-        scrollElement.scrollTop = scrollElement.scrollHeight
-      }
-    }
-  }
-
-  // Scroll when messages or streaming content changes
-  useEffect(() => {
-    // Use requestAnimationFrame to ensure DOM has painted
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        scrollToBottom()
-      }, 100)
-    })
-  }, [messages, currentResponse, loading])
+  
+  // StickToBottom from Conversation component handles auto-scrolling
+  // We don't need custom scroll logic
 
   // Load agent info
   useEffect(() => {
@@ -118,7 +96,7 @@ export default function Chat() {
                     updated[existingIndex] = {
                       ...updated[existingIndex],
                       content: updated[existingIndex].content + message.content.text,
-                      isStreaming: false // Disable artificial streaming - backend provides real streaming
+                      isStreaming: false // Display SDK deltas directly, no re-animation
                     }
                     return updated
                   } else {
@@ -127,7 +105,7 @@ export default function Chat() {
                       id: currentMessageId,
                       role: 'assistant',
                       content: message.content.text,
-                      isStreaming: false // Disable artificial streaming
+                      isStreaming: false // Display SDK deltas directly, no re-animation
                     }]
                   }
                 })
@@ -315,6 +293,11 @@ export default function Chat() {
               const metadata = message.content || message.data
               console.log('Metadata received:', metadata)
               
+              // Stream complete event - no action needed since we're not animating
+              if (metadata?.event === 'stream_complete') {
+                console.log('Stream complete')
+              }
+              
               // Finalize any remaining text as a message if exists
               setCurrentResponse(currentResp => {
                 if (currentResp) {
@@ -324,7 +307,7 @@ export default function Chat() {
                     id: textMessageId,
                     role: 'assistant',
                     content: currentResp,
-                    isStreaming: false  // Disable artificial streaming - using real backend streaming
+                    isStreaming: false  // Final message, no longer streaming
                   }])
                 }
                 return '' // Clear current response
@@ -476,6 +459,8 @@ export default function Chat() {
     if (textarea) {
       textarea.style.height = '38px'
     }
+    
+    // StickToBottom will handle scrolling automatically
 
     try {
       console.log('Sending WebSocket message:', { agentName, input })
@@ -563,10 +548,11 @@ export default function Chat() {
         </div>
       </header>
 
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col relative overflow-hidden" ref={chatContainerRef}>
-        <Conversation className="flex-1 max-w-3xl mx-auto w-full px-4" style={{ height: 'calc(100vh - 180px)' }}>
-          <ConversationContent className="pb-24">
+      {/* Main Content Area - Fixed height container */}
+      <div className="flex flex-col h-[calc(100vh-64px)] max-w-3xl mx-auto w-full px-4">
+        {/* Conversation takes available space with overflow */}
+        <Conversation className="flex-1 overflow-hidden">
+          <ConversationContent>
             {messages.length === 0 && !streamingMessage && (
               <div className="flex items-center justify-center h-full text-muted-foreground p-8">
                 <p>Start a conversation with {agent?.name || 'the agent'}</p>
@@ -647,21 +633,16 @@ export default function Chat() {
               </Message>
             )}
             
-            {/* Scroll anchor */}
-            <div ref={messagesEndRef} style={{ height: 1 }} />
           </ConversationContent>
           
           <ConversationScrollButton />
         </Conversation>
 
-        {/* Claude Desktop Style Input Area - Fixed Position */}
-        <div className="fixed bottom-0 left-0 right-0 p-2 z-50 bg-gradient-to-t from-background via-background/95 to-transparent pointer-events-none">
-          <div className="max-w-2xl mx-auto pointer-events-auto">
-            {/* Single input container with Claude styling - expands upward only */}
-            <div 
-              className="relative bg-background border border-input rounded-2xl transition-all duration-200"
-              style={{ minHeight: '76px' }}
-            >
+        {/* Input Area - Stays at bottom */}
+        <div className="bg-background py-4 flex-shrink-0">
+          <div className="relative bg-background border border-input rounded-2xl transition-all duration-200"
+            style={{ minHeight: '76px' }}
+          >
               {/* Main Input Field - Expands upward */}
               <div className="flex flex-col">
                 {/* Textarea container that expands */}
@@ -739,7 +720,6 @@ export default function Chat() {
                 </div>
               </div>
             </div>
-          </div>
         </div>
       </div>
     </div>
