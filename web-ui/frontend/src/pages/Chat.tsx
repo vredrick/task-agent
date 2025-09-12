@@ -47,7 +47,8 @@ export default function Chat() {
   const [currentResponse, setCurrentResponse] = useState('')
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
   const [pendingResponse, setPendingResponse] = useState('')
-  const [sessionId] = useState(() => crypto.randomUUID())
+  // Connection ID for WebSocket tracking (NOT an SDK session)
+  const [connectionId] = useState(() => crypto.randomUUID())
   const wsRef = useRef<ChatWebSocket | null>(null)
   const [pendingTools, setPendingTools] = useState<any[]>([]) // Queue for tools waiting for text to finish
   const [isTextStreaming, setIsTextStreaming] = useState(false) // Track if text is currently streaming
@@ -103,7 +104,7 @@ export default function Chat() {
       setConnecting(true)
       try {
         const ws = new ChatWebSocket(
-          sessionId,
+          connectionId,
           (message: WSMessage) => {
             if ((message.type === 'text' || message.type === 'text_delta') && message.content?.text) {
               
@@ -400,7 +401,7 @@ export default function Chat() {
     return () => {
       wsRef.current?.close()
     }
-  }, [agentName, sessionId])
+  }, [agentName, connectionId])
 
   // Effect to add pending tools after text streaming completes
   useEffect(() => {
