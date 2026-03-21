@@ -6,14 +6,14 @@ import { Conversation, ConversationContent, ConversationScrollButton } from '@/c
 import { Message, MessageContent, MessageAvatar } from '@/components/ai-elements/message'
 import { Tool, ToolHeader, ToolContent, ToolInput } from '@/components/ai-elements/tool'
 import { ToolOutputEnhanced } from '@/components/ai-elements/ToolOutputEnhanced'
-import { CodeBlock, CodeBlockCopyButton } from '@/components/ai-elements/code-block'
+// CodeBlock available if needed
 import { Loader } from '@/components/ai-elements/loader'
 import { StreamingMessage } from '@/components/StreamingMessage'
-import AuthStatus from '@/components/AuthStatus'
+// AuthStatus available if needed
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Send, RotateCcw, User, Bot, Paperclip, ChevronDown, Square } from 'lucide-react'
+import { ArrowLeft, Send, RotateCcw, Paperclip, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ChatMessage {
@@ -46,13 +46,13 @@ export default function Chat() {
   const [connecting, setConnecting] = useState(false)
   const [currentResponse, setCurrentResponse] = useState('')
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
-  const [pendingResponse, setPendingResponse] = useState('')
+  const [, setPendingResponse] = useState('')
   // Connection ID for WebSocket tracking (NOT an SDK session)
   const [connectionId] = useState(() => crypto.randomUUID())
   const wsRef = useRef<ChatWebSocket | null>(null)
   const [pendingTools, setPendingTools] = useState<any[]>([]) // Queue for tools waiting for text to finish
   const [isTextStreaming, setIsTextStreaming] = useState(false) // Track if text is currently streaming
-  const [displayedTextLength, setDisplayedTextLength] = useState(0) // Track how much text has been displayed
+  const [_displayedTextLength, _setDisplayedTextLength] = useState(0) // Track how much text has been displayed
   
   // StickToBottom from Conversation component handles auto-scrolling
   // We don't need custom scroll logic
@@ -159,7 +159,7 @@ export default function Chat() {
                     toolUse: {
                       ...prev[pendingIndex].toolUse!,
                       output: message.output,
-                      state: message.is_error ? 'output-error' : 'output-available' as const
+                      state: message.is_error ? 'output-error' as const : 'output-available' as const
                     }
                   }
                   
@@ -186,10 +186,10 @@ export default function Chat() {
                     toolUse: {
                       ...toolMessage.toolUse!,
                       output: message.output,
-                      state: message.is_error ? 'output-error' : 'output-available' as const
+                      state: message.is_error ? 'output-error' as const : 'output-available' as const
                     }
                   }
-                  
+
                   return [
                     ...prev.slice(0, toolMessageIndex),
                     updatedToolMessage,
@@ -242,7 +242,7 @@ export default function Chat() {
                     ...toolMessage,
                     toolUse: {
                       ...toolMessage.toolUse!,
-                      state: message.success ? 'output-available' : 'output-error'
+                      state: message.success ? 'output-available' as const : 'output-error' as const
                     }
                   }
                   
@@ -293,9 +293,13 @@ export default function Chat() {
               const metadata = message.content || message.data
               console.log('Metadata received:', metadata)
               
-              // Stream complete event - no action needed since we're not animating
+              // Stream complete event - stop loading when stream is done
               if (metadata?.event === 'stream_complete') {
                 console.log('Stream complete')
+                setLoading(false)
+                // Clear streaming state when complete
+                setCurrentMessageId(null)
+                setPendingResponse('')
               }
               
               // Finalize any remaining text as a message if exists
@@ -344,17 +348,14 @@ export default function Chat() {
                 return prev
               })
               
-              // Clear streaming state
-              setCurrentMessageId(null)
-              setPendingResponse('')
-              setLoading(false)
+              // Don't clear state here - only on stream_complete above
             } else if (message.type === 'error') {
               console.error('Error from agent:', message.content)
               setCurrentResponse(prev => prev + '\n[Error: ' + message.content + ']')
               setLoading(false)
             } else if (message.session_id || message.conversation_id) {
               console.log('Session established:', message.session_id || message.conversation_id)
-              setTimeout(() => setLoading(false), 100)
+              // Don't set loading to false here - wait for actual completion
             } else if (message.type === 'complete') {
               setLoading(false)
             }
@@ -366,8 +367,7 @@ export default function Chat() {
           () => {
             console.log('WebSocket closed')
             setLoading(false)
-          },
-          8001 // Use TypeScript backend on port 8001
+          }
         )
 
         await ws.connect()
@@ -499,13 +499,6 @@ export default function Chat() {
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
-
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Compact Header */}
@@ -587,7 +580,7 @@ export default function Chat() {
                     {message.toolUse && (
                       <Tool className="mt-3 border border-blue-900/30 dark:border-blue-400/30 rounded-lg">
                         <ToolHeader
-                          type={message.toolUse.name}
+                          type={`tool-${message.toolUse.name}` as const}
                           state={message.toolUse.state || 'input-available'}
                         />
                         <ToolContent>
@@ -622,7 +615,7 @@ export default function Chat() {
               </Message>
             ))}
             
-            {loading && !streamingMessage && (
+            {loading && !messages.some(m => m.id === currentMessageId) && (
               <Message from="assistant">
                 <MessageContent role="assistant">
                   <div className="flex items-center gap-2 text-muted-foreground">

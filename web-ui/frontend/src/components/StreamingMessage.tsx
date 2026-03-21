@@ -1,4 +1,3 @@
-import React from 'react'
 import { Response } from '@/components/ai-elements/response'
 import { CodeBlock, CodeBlockCopyButton } from '@/components/ai-elements/code-block'
 
@@ -8,17 +7,17 @@ interface StreamingMessageProps {
   className?: string
 }
 
-export function StreamingMessage({ content, isStreaming = false, className }: StreamingMessageProps) {
+export function StreamingMessage({ content, className }: StreamingMessageProps) {
   // Response component with Streamdown handles streaming natively
   // parseIncompleteMarkdown automatically handles partial markdown during streaming
-  
+
   return (
     <>
-      <Response 
+      <Response
         className={className}
         parseIncompleteMarkdown={true}
         components={{
-          pre: ({ children, ...props }) => {
+          pre: ({ children }) => {
             // Extract code content and language from the pre/code elements
             const codeElement = children as any
             const className = codeElement?.props?.className || ''

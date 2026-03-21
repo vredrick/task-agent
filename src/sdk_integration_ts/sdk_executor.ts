@@ -1,10 +1,10 @@
-import { query } from '@anthropic-ai/claude-code';
+import { spawn, type ChildProcess } from 'child_process';
+import { createInterface } from 'readline';
+import { randomUUID } from 'crypto';
 import type { AgentConfig } from './agent_manager';
 import { SessionStore } from './session_store';
-import * as path from 'path';
-import * as os from 'os';
 
-// Message types matching the SDK documentation
+// Message types matching the CLI stream-json output
 export interface SDKMessage {
   type: string;
   subtype?: string;
@@ -39,15 +39,14 @@ export interface ExecutionOptions {
 
 export class SDKExecutor {
   private sessionStore: SessionStore;
-  private credentialsPath: string;
+  private activeProcesses: Map<string, ChildProcess> = new Map();
 
   constructor() {
     this.sessionStore = new SessionStore();
-    this.credentialsPath = path.join(os.homedir(), '.claude', '.credentials.json');
   }
 
   /**
-   * Execute an agent with the given prompt
+   * Execute an agent with the given prompt via the claude CLI
    */
   async executeAgent(
     agent: AgentConfig,
@@ -66,18 +65,17 @@ export class SDKExecutor {
     // Handle session management
     let useSessionId = sessionId;
     if (sessionReset && sessionId) {
-      // Reset session if requested
       this.sessionStore.deleteSession(sessionId);
       useSessionId = undefined;
     }
 
-    // Prepare SDK options
-    const sdkOptions: any = {
+    // Prepare CLI options (same shape as before for streamMessages compatibility)
+    const cliOptions: any = {
       appendSystemPrompt: agent.systemPrompt,
       allowedTools: agent.tools || [],
       maxTurns: maxTurns || agent.maxTurns || 5,
       abortController,
-      includePartialMessages, // Control partial message streaming
+      includePartialMessages,
       cwd: agent.cwd || process.cwd(),
     };
 
@@ -85,44 +83,104 @@ export class SDKExecutor {
     if (useSessionId && !sessionReset) {
       const session = this.sessionStore.getSession(useSessionId);
       if (session) {
-        sdkOptions.resume = useSessionId;
+        cliOptions.resume = useSessionId;
       }
     }
 
     // Add model if specified
     if (agent.model) {
-      sdkOptions.model = agent.model;
+      cliOptions.model = agent.model;
     }
 
-    // Create async generator to stream messages
-    return this.streamMessages(prompt, sdkOptions, useSessionId, onMessage);
+    return this.streamMessages(prompt, cliOptions, useSessionId, onMessage);
   }
 
   /**
-   * Stream messages from the SDK
+   * Stream messages from the claude CLI subprocess
    */
   private async *streamMessages(
     prompt: string,
-    sdkOptions: any,
+    cliOptions: any,
     sessionId?: string,
     onMessage?: (message: SDKMessage) => void
   ): AsyncGenerator<SDKMessage> {
-    try {
-      let currentSessionId = sessionId;
-      let hasInitMessage = false;
+    let currentSessionId = sessionId;
 
-      // Call the SDK query function
-      for await (const message of query({ prompt, options: sdkOptions })) {
+    // Build CLI arguments
+    const args: string[] = [
+      '-p', prompt,
+      '--output-format', 'stream-json',
+      '--include-partial-messages',
+      '--permission-mode', 'default',
+    ];
+
+    if (cliOptions.appendSystemPrompt) {
+      args.push('--append-system-prompt', cliOptions.appendSystemPrompt);
+    }
+
+    if (cliOptions.allowedTools && cliOptions.allowedTools.length > 0) {
+      args.push('--allowed-tools', ...cliOptions.allowedTools);
+    }
+
+    if (cliOptions.model) {
+      args.push('--model', cliOptions.model);
+    }
+
+    if (cliOptions.resume) {
+      args.push('-r', cliOptions.resume);
+    }
+
+    // Spawn the claude CLI process
+    const processId = randomUUID();
+    const child = spawn('claude', args, {
+      cwd: cliOptions.cwd || process.cwd(),
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env },
+    });
+
+    this.activeProcesses.set(processId, child);
+
+    // Wire up abort support
+    let abortHandler: (() => void) | null = null;
+    if (cliOptions.abortController) {
+      abortHandler = () => {
+        child.kill('SIGTERM');
+        setTimeout(() => {
+          if (!child.killed) child.kill('SIGKILL');
+        }, 2000);
+      };
+      cliOptions.abortController.signal.addEventListener('abort', abortHandler, { once: true });
+    }
+
+    try {
+      // Parse newline-delimited JSON from stdout
+      const rl = createInterface({ input: child.stdout! });
+
+      // Collect stderr for error reporting
+      let stderrData = '';
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderrData += chunk.toString();
+      });
+
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+
+        let message: SDKMessage;
+        try {
+          message = JSON.parse(line);
+        } catch {
+          // Skip non-JSON lines (debug output, etc.)
+          continue;
+        }
+
         // Extract session ID from init message
         if (message.type === 'system' && message.subtype === 'init') {
           currentSessionId = message.session_id;
-          hasInitMessage = true;
-          
-          // Save session for future use
+
           if (currentSessionId) {
             this.sessionStore.createSession(currentSessionId, {
               id: currentSessionId,
-              agentName: sdkOptions.appendSystemPrompt ? 'custom' : 'default',
+              agentName: cliOptions.appendSystemPrompt ? 'custom' : 'default',
               createdAt: Date.now(),
               lastUsed: Date.now(),
               turnCount: 0
@@ -140,26 +198,63 @@ export class SDKExecutor {
           }
         }
 
-        // Call the optional message handler
         if (onMessage) {
           onMessage(message);
         }
 
-        // Yield the message to the caller
         yield message;
       }
-    } catch (error: any) {
-      // Yield error as a message
-      yield {
-        type: 'error',
-        subtype: 'sdk_error',
-        session_id: sessionId,
-        result: error.message || 'Unknown SDK error',
-        message: {
-          error: error.message,
-          stack: error.stack
+
+      // Wait for process to fully exit
+      await new Promise<void>((resolve) => {
+        if (child.exitCode !== null) {
+          resolve();
+          return;
         }
-      };
+        child.on('close', (code) => {
+          if (code !== 0 && !cliOptions.abortController?.signal.aborted && stderrData.trim()) {
+            console.error(`Claude CLI exited with code ${code}: ${stderrData.slice(0, 500)}`);
+          }
+          resolve();
+        });
+      });
+
+    } catch (error: any) {
+      const isAbortError =
+        cliOptions.abortController?.signal.aborted ||
+        error.message?.includes('abort') ||
+        error.message?.includes('cancelled') ||
+        error.message?.includes('interrupted');
+
+      if (isAbortError) {
+        yield {
+          type: 'interrupt_result',
+          subtype: 'user_interrupted',
+          session_id: sessionId || currentSessionId,
+          result: 'Operation interrupted by user',
+          message: {
+            reason: 'User requested interruption',
+            timestamp: Date.now()
+          }
+        };
+      } else {
+        yield {
+          type: 'error',
+          subtype: 'cli_error',
+          session_id: sessionId,
+          result: error.message || 'Unknown CLI error',
+          message: {
+            error: error.message,
+            stack: error.stack
+          }
+        };
+      }
+    } finally {
+      this.activeProcesses.delete(processId);
+      // Clean up abort listener
+      if (abortHandler && cliOptions.abortController) {
+        cliOptions.abortController.signal.removeEventListener('abort', abortHandler);
+      }
     }
   }
 

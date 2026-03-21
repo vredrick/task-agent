@@ -1,6 +1,6 @@
 /**
  * TypeScript backend for Task Agent Web UI
- * Using @anthropic-ai/claude-code SDK for full feature support
+ * Using claude CLI subprocess for ToS-compliant execution
  * Runs on port 8001 (parallel to Python backend on 8000)
  */
 
@@ -46,7 +46,7 @@ app.get('/api/health', (req: Request, res: Response) => {
     status: 'healthy',
     backend: 'typescript',
     port: PORT,
-    sdk: '@anthropic-ai/claude-code',
+    sdk: 'claude-cli-subprocess',
     agentsPath: AGENTS_PATH,
     timestamp: new Date().toISOString()
   });
@@ -57,10 +57,10 @@ app.get('/api/info', (req: Request, res: Response) => {
   res.json({
     name: 'Task Agent TypeScript Backend',
     version: '1.0.0',
-    description: 'TypeScript implementation using @anthropic-ai/claude-code SDK',
+    description: 'TypeScript implementation using claude CLI subprocess',
     features: [
       'Full streaming support with partial messages',
-      'Direct SDK integration',
+      'CLI subprocess integration (ToS-compliant)',
       'Session management',
       'OAuth authentication',
       'WebSocket streaming'
@@ -446,6 +446,24 @@ function handleInterrupt(connectionId: string) {
 
 // Transform SDK messages to frontend format
 function transformSDKMessage(sdkMessage: SDKMessage): any {
+  // Log all SDK messages to understand what we're receiving
+  if (sdkMessage.type === 'stream_event' && sdkMessage.event?.type === 'content_block_delta') {
+    // Special logging for content_block_delta to see the actual content
+    console.log('SDK Delta:', JSON.stringify({
+      type: 'content_block_delta',
+      delta: sdkMessage.event.delta,
+      text: sdkMessage.event.delta?.text
+    }));
+  } else {
+    console.log('SDK Message:', JSON.stringify({
+      type: sdkMessage.type,
+      subtype: sdkMessage.subtype,
+      event_type: sdkMessage.event?.type,
+      has_text: !!sdkMessage.text,
+      session_id: sdkMessage.session_id
+    }));
+  }
+  
   switch (sdkMessage.type) {
     case 'stream_event':
       // Handle streaming events from SDK
@@ -537,6 +555,16 @@ function transformSDKMessage(sdkMessage: SDKMessage): any {
   
   return null; // Filter out unhandled message types
 }
+
+// Serve production frontend build
+const frontendDist = path.join(__dirname, '../../frontend/dist');
+app.use(express.static(frontendDist));
+// SPA fallback - serve index.html for all non-API routes
+app.get('*', (req: Request, res: Response) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  }
+});
 
 // Start server
 server.listen(PORT, () => {

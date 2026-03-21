@@ -1,9 +1,9 @@
 import { useNavigate } from 'react-router-dom'
 import { type Agent } from '@/lib/api'
-import { cn } from '@/lib/utils'
+// cn available if needed
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Code2, FileText, Bot } from 'lucide-react'
+import { Bot } from 'lucide-react'
 
 interface AgentCardProps {
   agent: Agent
@@ -18,8 +18,6 @@ export default function AgentCard({ agent, agentKey }: AgentCardProps) {
   }
 
   // Choose icon based on agent name
-  const Icon = agent.name.toLowerCase().includes('code') ? Code2 : FileText
-
   return (
     <div className="bg-card rounded-lg border border-border p-4 hover:bg-card/80 transition-colors cursor-pointer group"
          onClick={handleSelect}>

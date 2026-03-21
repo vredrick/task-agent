@@ -1,10 +1,16 @@
 // WebSocket client for streaming chat responses
 
 export interface ChatMessage {
-  type: 'text' | 'text_delta' | 'tool_use' | 'tool_result' | 'error' | 'session_info' | 'usage' | 'complete' | 'cancelled' | 'metadata'
+  type: 'text' | 'text_delta' | 'tool_use' | 'tool_result' | 'tool_start' | 'tool_complete' | 'error' | 'session_info' | 'usage' | 'complete' | 'cancelled' | 'metadata' | 'interrupt_result'
   content?: any
   name?: string
   input?: any
+  id?: string
+  tool_use_id?: string
+  output?: any
+  is_error?: boolean
+  success?: boolean
+  data?: any
   conversation_id?: string
   session_id?: string
   usage?: {
@@ -15,7 +21,7 @@ export interface ChatMessage {
 }
 
 export class ChatWebSocket {
-  private ws: WebSocket | null = null
+  public ws: WebSocket | null = null
   private url: string
   private onMessage: (message: ChatMessage) => void
   private onError?: (error: any) => void
@@ -26,12 +32,10 @@ export class ChatWebSocket {
     onMessage: (message: ChatMessage) => void,
     onError?: (error: any) => void,
     onClose?: () => void,
-    backendPort?: number
   ) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const hostname = window.location.hostname
-    const port = backendPort || (import.meta.env.VITE_BACKEND_PORT || 8000)
-    this.url = `${protocol}//${hostname}:${port}/ws/chat/${connectionId}`
+    const host = window.location.host // includes port if non-default
+    this.url = `${protocol}//${host}/ws/chat/${connectionId}`
     this.onMessage = onMessage
     this.onError = onError
     this.onClose = onClose

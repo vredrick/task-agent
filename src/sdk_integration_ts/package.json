@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "@anthropic-ai/claude-code": "^1.0.112",
     "gray-matter": "^4.0.3",
     "yaml": "^2.8.1"
   }

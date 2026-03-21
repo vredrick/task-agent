@@ -19,7 +19,7 @@ export function useStreamingText(
   const {
     wordDelay = 30, // 30ms between words for smooth reading
     characterMode = false,
-    bufferMode = false,
+    bufferMode: _bufferMode = false,
     onComplete
   } = options
 

@@ -2,7 +2,7 @@
 
 ## 🎯 Quick Context
 
-You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v5.0.0 with dual SDK architecture - both Python and TypeScript backends for maximum flexibility. **NEW**: TypeScript backend with @anthropic-ai/claude-code SDK providing enhanced session management and real-time streaming!
+You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v5.0.0 with dual backend architecture - both Python and TypeScript backends for maximum flexibility. **NEW**: TypeScript backend uses claude CLI subprocess for ToS-compliant execution with real-time streaming!
 
 ### Key Architecture Points
 - Each agent = separate MCP tool (e.g., `analyst`, `dev`, `qa`)
@@ -12,10 +12,10 @@ You're working with a **multi-tool MCP server** where each user-defined AI agent
 - Built on FastMCP with dynamic tool registration
 - Python 3.11+ required for MCP server
 - **Web UI**: React frontend with choice of backends:
-  - **TypeScript Backend** (port 8001): Express + WebSocket with @anthropic-ai/claude-code SDK v1.0.112
-  - **Python Backend** (port 8000): FastAPI + WebSocket with subprocess SDK
+  - **TypeScript Backend** (port 8001): Express + WebSocket with claude CLI subprocess (serves production frontend)
+  - **Python Backend** (port 8000): FastAPI + WebSocket with subprocess SDK (legacy)
 - **Session Architecture**: Backend-managed sessions with connectionId → sdkSessionId mapping
-- **SDK Integration**: Direct agent execution without MCP overhead in both Python and TypeScript
+- **CLI Integration**: Spawns official `claude` CLI binary for ToS-compliant execution
 
 ## 📁 Project Structure
 
@@ -36,7 +36,7 @@ task-agent/
 │   ├── backend-ts/         # TypeScript: Express + WebSocket (port 8001)
 │   │   ├── src/
 │   │   │   └── server.ts   # Main TypeScript server with session management
-│   │   ├── package.json    # Dependencies including @anthropic-ai/claude-code
+│   │   ├── package.json    # Dependencies (express, ws, etc.)
 │   │   └── tsconfig.json   # TypeScript configuration
 │   └── frontend/           # React + TypeScript UI (port 5173)
 ├── task-agents/            # User agent configs (ships with example)
@@ -84,18 +84,16 @@ agent_manager.load_agents()
 
 ### Quick Start
 ```bash
-cd web-ui
+# Production (recommended) — single port, fast loading
+cd web-ui/frontend && npm run build   # Build frontend once
+cd ../backend-ts && npm run dev       # Serves everything on port 8001
 
-# Option 1: Use TypeScript backend (recommended)
-cd backend-ts && npm run dev  # Port 8001
-cd ../frontend && npm run dev  # Port 5173
+# Development — with Vite HMR (local only, slow on remote)
+cd web-ui/backend-ts && npm run dev   # Port 8001
+cd ../frontend && npm run dev         # Port 5173
 
-# Option 2: Use Python backend
-cd backend && python server.py  # Port 8000
-cd ../frontend && npm run dev   # Port 5173
-
-# Or use the convenience script:
-./start.sh  # Starts Python backend + frontend
+# Legacy Python backend
+cd web-ui/backend && python server.py # Port 8000
 ```
 
 ### Session Management Architecture
@@ -219,11 +217,11 @@ python3.11 -m twine upload dist/*
 ## 🎯 Key Changes in v5.0.0
 
 ### What's New
-- **TypeScript Backend**: Full Express + WebSocket implementation with @anthropic-ai/claude-code SDK
-- **Dual Backend Support**: Choose between Python (port 8000) or TypeScript (port 8001)
-- **Enhanced Session Management**: Backend-managed SDK sessions with proper connectionId mapping
-- **Real-time Streaming**: WebSocket with `includePartialMessages` for smooth text flow
-- **TypeScript SDK Integration**: Native Claude Code SDK v1.0.112 support
+- **TypeScript Backend**: Full Express + WebSocket implementation with claude CLI subprocess
+- **ToS-Compliant**: Replaced programmatic SDK OAuth usage with official CLI binary spawning
+- **Production Frontend**: Built React app served from Express backend (single port 8001)
+- **Enhanced Session Management**: Backend-managed sessions with proper connectionId mapping
+- **Real-time Streaming**: CLI `--output-format stream-json --include-partial-messages` for smooth text flow
 - **Improved Architecture**: Clear separation between connection and session management
 
 ### v4.0.0 Changes (Previous)
@@ -260,36 +258,36 @@ resource_uri = f"{sanitized_name}://"
 - Each agent can maintain conversation context
 - `session_reset` parameter available for agents with `resume-session: true`
 
-### TypeScript SDK Integration
+### CLI Subprocess Integration
 
-The TypeScript backend uses the official `@anthropic-ai/claude-code` SDK:
+The TypeScript backend spawns the official `claude` CLI as a subprocess:
 
 ```typescript
-import { ClaudeCodeClient } from '@anthropic-ai/claude-code';
+import { spawn } from 'child_process';
+import { createInterface } from 'readline';
 
-// Initialize SDK with OAuth credentials
-const client = new ClaudeCodeClient({
-  credentialsPath: '~/.claude/.credentials'
-});
+// Build CLI args from agent config
+const child = spawn('claude', [
+  '-p', prompt,
+  '--output-format', 'stream-json',
+  '--include-partial-messages',
+  '--append-system-prompt', agent.systemPrompt,
+  '--allowed-tools', ...agent.tools,
+  '--model', agent.model,
+  '--permission-mode', 'default',
+  ...(sessionId ? ['-r', sessionId] : [])
+], { cwd: agent.cwd });
 
-// Execute agent with streaming
-const generator = await client.execute({
-  agentConfig,
-  prompt,
-  sessionId,  // SDK session for continuity
-  includePartialMessages: true  // Enable text_delta streaming
-});
-
-// Stream responses via WebSocket
-for await (const event of generator) {
-  if (event.type === 'text_delta') {
-    ws.send(JSON.stringify({
-      type: 'stream',
-      content: { text: event.text }
-    }));
-  }
+// Parse newline-delimited JSON from stdout
+const rl = createInterface({ input: child.stdout });
+for await (const line of rl) {
+  const message = JSON.parse(line);
+  // Same SDKMessage format — session IDs, text deltas, tool use, etc.
+  ws.send(JSON.stringify(transformSDKMessage(message)));
 }
 ```
+
+This approach is ToS-compliant: it uses the official CLI binary (which handles its own OAuth auth) rather than programmatically consuming subscription tokens.
 
 ### WebSocket Protocol
 
@@ -331,7 +329,7 @@ Both backends implement the same WebSocket protocol:
    - Node.js 18+ for TypeScript backend
 
 3. **Backend choice**:
-   - **TypeScript (port 8001)**: Recommended for production, native SDK integration
+   - **TypeScript (port 8001)**: Recommended, CLI subprocess + serves production frontend
    - **Python (port 8000)**: Legacy support, subprocess-based SDK
 
 4. **Session handling**:
@@ -359,8 +357,8 @@ For detailed information about specific components, see:
 - **[/web-ui/CLAUDE.md](/home/vredrick/task-agent/web-ui/CLAUDE.md)** - Web UI documentation
   - Frontend React architecture
   - Dual backend implementations:
-    - Python: FastAPI + subprocess SDK
-    - TypeScript: Express + @anthropic-ai/claude-code SDK
+    - Python: FastAPI + subprocess SDK (legacy)
+    - TypeScript: Express + claude CLI subprocess
   - WebSocket streaming protocol
   - Session management architecture
   - Development and deployment guide

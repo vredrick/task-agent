@@ -1,7 +1,7 @@
 {
   "name": "task-agent-backend-ts",
   "version": "1.0.0",
-  "description": "TypeScript backend for Task Agent Web UI using @anthropic-ai/claude-code SDK",
+  "description": "TypeScript backend for Task Agent Web UI using claude CLI subprocess",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -18,7 +18,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/claude-code": "^1.0.112",
     "@types/uuid": "^10.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.1",
