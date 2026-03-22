@@ -32,6 +32,8 @@ class AgentConfig:
     system_prompt: str
     resume_session: Union[bool, int] = False  # False, True (5 default), or specific number
     resource_dirs: List[str] = None  # Optional additional directories to add via --add-dir
+    disallowed_tools: List[str] = None  # Optional tools to deny via --disallowed-tools
+    mcp_config: Optional[str] = None  # Optional path to MCP config JSON via --mcp-config
     
 
 class AgentManager:
@@ -100,6 +102,8 @@ class AgentManager:
             # Parse optional fields
             resume_session = False
             resource_dirs = None
+            disallowed_tools = None
+            mcp_config = None
             
             if 'optional' in frontmatter and isinstance(frontmatter['optional'], dict):
                 optional = frontmatter['optional']
@@ -131,6 +135,19 @@ class AgentManager:
                     elif isinstance(resource_dirs_val, list):
                         # Already a list
                         resource_dirs = resource_dirs_val
+
+                # Parse disallowed-tools
+                disallowed_tools_val = optional.get('disallowed-tools') or optional.get('disallowed_tools')
+                if disallowed_tools_val:
+                    if isinstance(disallowed_tools_val, str):
+                        disallowed_tools = [t.strip() for t in disallowed_tools_val.split(',')]
+                    elif isinstance(disallowed_tools_val, list):
+                        disallowed_tools = disallowed_tools_val
+
+                # Parse mcp-config
+                mcp_config_val = optional.get('mcp-config') or optional.get('mcp_config')
+                if mcp_config_val and isinstance(mcp_config_val, str):
+                    mcp_config = mcp_config_val.strip()
             
             return AgentConfig(
                 name=config_path.stem,
@@ -141,7 +158,9 @@ class AgentManager:
                 cwd=cwd,
                 system_prompt=system_prompt,
                 resume_session=resume_session,
-                resource_dirs=resource_dirs
+                resource_dirs=resource_dirs,
+                disallowed_tools=disallowed_tools,
+                mcp_config=mcp_config
             )
             
         except yaml.YAMLError as e:
@@ -236,10 +255,18 @@ class AgentManager:
             '-p', task_description,
             '--output-format', 'stream-json',
             '--verbose',  # Required for stream-json output
-            '--allowedTools', *agent_config.tools,  # Unpack list for space-separated tools
+            '--tools', ','.join(agent_config.tools),
             '--model', agent_config.model
         ]
         
+        # Add session display name
+        session_name = agent_config.agent_name.lower().replace(' ', '_').replace('-', '_')
+        cmd.extend(['--name', session_name])
+
+        # Add disallowed tools if configured
+        if agent_config.disallowed_tools:
+            cmd.extend(['--disallowed-tools', ','.join(agent_config.disallowed_tools)])
+
         # Add resume flag if we have a session to resume
         if resume_session_id:
             cmd.extend(['-r', resume_session_id])
@@ -288,6 +315,17 @@ class AgentManager:
                         logger.warning(f"Resource directory not found or not a directory: {resolved_dir}")
                         missing_resource_dirs.append((resource_dir, resolved_dir))
             
+            # Add MCP config if specified
+            if agent_config.mcp_config:
+                mcp_config_path = agent_config.mcp_config
+                if not os.path.isabs(mcp_config_path):
+                    mcp_config_path = os.path.abspath(os.path.join(working_dir, mcp_config_path))
+                if os.path.exists(mcp_config_path):
+                    cmd.extend(['--mcp-config', mcp_config_path, '--strict-mcp-config'])
+                    logger.info(f"Added MCP config: {mcp_config_path}")
+                else:
+                    logger.warning(f"MCP config file not found: {mcp_config_path}")
+
             # Build dynamic resource directory instruction
             resource_info = []
             if accessible_resource_dirs:

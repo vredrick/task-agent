@@ -10,9 +10,15 @@ cwd: .
 optional:
   # Enable session resumption with max exchanges (true = 5, or specify number)
   resume-session: false
-  
+
   # Additional directories the agent can access (comma-separated)
   # resource_dirs: ./docs, ./data
+
+  # Tools to deny (comma-separated) - used with --disallowed-tools flag
+  # disallowed-tools: WebSearch, WebFetch
+
+  # Path to MCP server configuration JSON file (absolute or relative to cwd)
+  # mcp-config: ./mcp-servers.json
 ---
 
 System-prompt:
@@ -36,6 +42,8 @@ This file shows how to create custom agents for the task-agents MCP server.
   - `true 10` = 10 exchanges
   - `10` = 10 exchanges
 - **resource_dirs**: Additional directories the agent can access
+- **disallowed-tools**: Comma-separated list of tools to deny
+- **mcp-config**: Path to MCP server configuration JSON file
 
 ### Available Tools:
 - Read, Write, Edit, MultiEdit - File operations
