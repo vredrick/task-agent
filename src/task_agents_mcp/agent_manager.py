@@ -34,6 +34,10 @@ class AgentConfig:
     resource_dirs: List[str] = None  # Optional additional directories to add via --add-dir
     disallowed_tools: List[str] = None  # Optional tools to deny via --disallowed-tools
     mcp_config: Optional[str] = None  # Optional path to MCP config JSON via --mcp-config
+    plugin_dir: Optional[str] = None  # Path to plugin directory (for registry-based agents)
+    prompt_type: str = "override"  # "override" or "append" (how PROMPT.md is applied)
+    is_plugin_agent: bool = False  # True if loaded from plugin registry
+    prompt_file: Optional[str] = None  # Path to PROMPT.md file
     
 
 class AgentManager:
@@ -185,7 +189,127 @@ class AgentManager:
             }
             for name, agent in self.agents.items()
         }
-        
+
+    def load_registry_agents(self, registry_path: str = None) -> None:
+        """Load agents from the plugin registry (~/.claude/plugins/registry.json)."""
+        if registry_path is None:
+            registry_path = os.path.expanduser("~/.claude/plugins/registry.json")
+
+        registry_file = Path(registry_path)
+        if not registry_file.exists():
+            logger.info(f"No plugin registry found at {registry_path}")
+            return
+
+        try:
+            with open(registry_file) as f:
+                registry = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to read plugin registry: {e}")
+            return
+
+        agents_dict = registry.get("agents", {})
+        loaded_count = 0
+
+        for agent_name, entry in agents_dict.items():
+            # Skip if MCP tool not enabled
+            if not entry.get("mcpToolEnabled", True):
+                logger.info(f"Skipping {agent_name}: mcpToolEnabled is false")
+                continue
+
+            # Skip if setup not complete
+            if not entry.get("setupComplete", True):
+                logger.info(f"Skipping {agent_name}: setup not complete")
+                continue
+
+            # Skip if already loaded from .md files (md takes precedence)
+            if agent_name in self.agents:
+                logger.info(f"Skipping registry agent {agent_name}: already loaded from .md")
+                continue
+
+            try:
+                config = self._parse_registry_agent(agent_name, entry)
+                if config:
+                    self.agents[config.name] = config
+                    loaded_count += 1
+                    logger.info(f"Loaded plugin agent: {config.name} ({config.agent_name})")
+            except Exception as e:
+                logger.error(f"Error loading registry agent {agent_name}: {e}")
+
+        if loaded_count > 0:
+            logger.info(f"Loaded {loaded_count} agents from plugin registry")
+
+    def _parse_registry_agent(self, name: str, entry: dict) -> Optional[AgentConfig]:
+        """Parse a single agent from a registry entry + its plugin directory."""
+        plugin_dir_raw = entry.get("pluginDir", "")
+        plugin_dir = os.path.expanduser(plugin_dir_raw)
+
+        if not os.path.isdir(plugin_dir):
+            logger.error(f"Plugin directory not found: {plugin_dir}")
+            return None
+
+        # Read plugin.json for tool config
+        plugin_json_path = os.path.join(plugin_dir, ".claude-plugin", "plugin.json")
+        if not os.path.exists(plugin_json_path):
+            logger.error(f"No plugin.json at {plugin_json_path}")
+            return None
+
+        try:
+            with open(plugin_json_path) as f:
+                plugin_meta = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to read plugin.json for {name}: {e}")
+            return None
+
+        # Read PROMPT.md for system prompt
+        prompt_file = os.path.join(plugin_dir, "PROMPT.md")
+        system_prompt = ""
+        if os.path.exists(prompt_file):
+            with open(prompt_file) as f:
+                system_prompt = f.read()
+        else:
+            logger.warning(f"No PROMPT.md found for {name}")
+
+        # Determine tools (from plugin.json, with defaults)
+        tools = plugin_meta.get("tools", ["Read", "Write", "Edit", "Bash", "Glob", "Grep"])
+        if isinstance(tools, str):
+            tools = [t.strip() for t in tools.split(",")]
+
+        # Determine disallowed tools
+        disallowed_tools = plugin_meta.get("disallowedTools", [])
+        if isinstance(disallowed_tools, str):
+            disallowed_tools = [t.strip() for t in disallowed_tools.split(",")]
+        disallowed_tools = disallowed_tools if disallowed_tools else None
+
+        # Determine resume session
+        resume_session = plugin_meta.get("resumeSession", False)
+
+        # Resolve working directory
+        cwd = entry.get("workingDir") or "."
+
+        # MCP config path
+        mcp_config_path = os.path.join(plugin_dir, "mcp.json")
+        mcp_config = mcp_config_path if os.path.exists(mcp_config_path) else None
+
+        # Display name from registry or derive from name
+        display_name = entry.get("displayName", name.replace("-", " ").title())
+
+        return AgentConfig(
+            name=name,
+            agent_name=display_name,
+            description=plugin_meta.get("description", entry.get("domain", "")),
+            tools=tools,
+            model=entry.get("model", "sonnet"),
+            cwd=cwd,
+            system_prompt=system_prompt,
+            resume_session=resume_session,
+            disallowed_tools=disallowed_tools,
+            mcp_config=mcp_config,
+            plugin_dir=plugin_dir,
+            prompt_type=entry.get("promptType", "override"),
+            is_plugin_agent=True,
+            prompt_file=prompt_file if os.path.exists(prompt_file) else None
+        )
+
     async def execute_task(self, selected_agent: Dict[str, Any], task_description: str, 
                           session_reset: bool = False,
                           progress_callback: Optional[Callable[[str], Awaitable[None]]] = None) -> str:
@@ -278,14 +402,17 @@ class AgentManager:
             cwd = agent_config.cwd
             
             
-            # If cwd is '.', use the parent directory of the task-agents folder
+            # If cwd is '.', resolve based on agent type
             if cwd == '.':
-                # The task-agents folder is always at configs_dir
-                # We want to go to the parent directory of the task-agents folder
-                task_agents_dir = Path(self.configs_dir).resolve()
-                # Always go up one level from the task-agents directory
-                cwd = str(task_agents_dir.parent)
-                logger.info(f"Agent cwd was '.', resolved to: {cwd}")
+                if agent_config.is_plugin_agent:
+                    # Plugin agent: use current working directory
+                    cwd = os.getcwd()
+                    logger.info(f"Plugin agent cwd was '.', resolved to cwd: {cwd}")
+                else:
+                    # .md agent: use the parent directory of the task-agents folder
+                    task_agents_dir = Path(self.configs_dir).resolve()
+                    cwd = str(task_agents_dir.parent)
+                    logger.info(f"Agent cwd was '.', resolved to: {cwd}")
             
             # Expand environment variables and make absolute
             working_dir = os.path.abspath(os.path.expandvars(cwd))
@@ -327,37 +454,51 @@ class AgentManager:
                 else:
                     logger.warning(f"MCP config file not found: {mcp_config_path}")
 
-            # Build dynamic resource directory instruction
-            resource_info = []
-            if accessible_resource_dirs:
-                resource_info.append(f"ACCESSIBLE RESOURCES: {', '.join(accessible_resource_dirs)}")
-            if missing_resource_dirs:
-                missing_list = [f"{orig} (looked at: {resolved})" for orig, resolved in missing_resource_dirs]
-                resource_info.append(f"MISSING RESOURCES: {', '.join(missing_list)}")
-            
-            # Replace [resource_dir] placeholders in system prompt with actual paths
-            system_prompt_with_replacements = agent_config.system_prompt
-            if accessible_resource_dirs:
-                # If we have one resource dir, replace with that path
-                # If we have multiple, replace with a comma-separated list
-                if len(accessible_resource_dirs) == 1:
-                    system_prompt_with_replacements = system_prompt_with_replacements.replace('[resource_dir]', accessible_resource_dirs[0])
-                else:
-                    resource_dirs_str = ', '.join(accessible_resource_dirs)
-                    system_prompt_with_replacements = system_prompt_with_replacements.replace('[resource_dir]', resource_dirs_str)
-            
-            # Add the system prompt with replacements
-            cmd.extend(['--system-prompt', system_prompt_with_replacements])
-            
-            # Build append-system-prompt instruction for working directory and resources
-            append_prompt_parts = []
-            append_prompt_parts.append(f"WORKING DIRECTORY CONTEXT: You are currently operating from the directory: {working_dir}")
-            if resource_info:
-                append_prompt_parts.extend(resource_info)
-            
-            # Add append-system-prompt flag
-            append_prompt = '\n'.join(append_prompt_parts)
-            cmd.extend(['--append-system-prompt', append_prompt])
+            # Branch: plugin-based agents vs .md-based agents
+            if agent_config.is_plugin_agent and agent_config.plugin_dir:
+                # Plugin agent: use --plugin-dir + --system-prompt-file
+                cmd.extend(['--plugin-dir', agent_config.plugin_dir])
+
+                if agent_config.prompt_file:
+                    if agent_config.prompt_type == "append":
+                        cmd.extend(['--append-system-prompt-file', agent_config.prompt_file])
+                    else:
+                        cmd.extend(['--system-prompt-file', agent_config.prompt_file])
+
+                # Append working directory context
+                cmd.extend(['--append-system-prompt',
+                            f"WORKING DIRECTORY CONTEXT: You are currently operating from the directory: {working_dir}"])
+            else:
+                # .md-based agent: inline system prompt (existing behavior)
+                # Build dynamic resource directory instruction
+                resource_info = []
+                if accessible_resource_dirs:
+                    resource_info.append(f"ACCESSIBLE RESOURCES: {', '.join(accessible_resource_dirs)}")
+                if missing_resource_dirs:
+                    missing_list = [f"{orig} (looked at: {resolved})" for orig, resolved in missing_resource_dirs]
+                    resource_info.append(f"MISSING RESOURCES: {', '.join(missing_list)}")
+
+                # Replace [resource_dir] placeholders in system prompt with actual paths
+                system_prompt_with_replacements = agent_config.system_prompt
+                if accessible_resource_dirs:
+                    if len(accessible_resource_dirs) == 1:
+                        system_prompt_with_replacements = system_prompt_with_replacements.replace('[resource_dir]', accessible_resource_dirs[0])
+                    else:
+                        resource_dirs_str = ', '.join(accessible_resource_dirs)
+                        system_prompt_with_replacements = system_prompt_with_replacements.replace('[resource_dir]', resource_dirs_str)
+
+                # Add the system prompt with replacements
+                cmd.extend(['--system-prompt', system_prompt_with_replacements])
+
+                # Build append-system-prompt instruction for working directory and resources
+                append_prompt_parts = []
+                append_prompt_parts.append(f"WORKING DIRECTORY CONTEXT: You are currently operating from the directory: {working_dir}")
+                if resource_info:
+                    append_prompt_parts.extend(resource_info)
+
+                # Add append-system-prompt flag
+                append_prompt = '\n'.join(append_prompt_parts)
+                cmd.extend(['--append-system-prompt', append_prompt])
             
             # Log the full command for debugging
             logger.info(f"Agent config cwd: {agent_config.cwd}")

@@ -60,15 +60,22 @@ if not os.path.exists(config_dir):
 agent_manager = AgentManager(config_dir)
 agent_manager.load_agents()
 
+# Load agents from plugin registry (plugin agents become MCP tools)
+registry_path = os.environ.get('PLUGIN_REGISTRY_PATH',
+                                os.path.expanduser('~/.claude/plugins/registry.json'))
+agent_manager.load_registry_agents(registry_path)
+
 # Check if any agents were loaded
 if not agent_manager.agents:
     logger.warning("No agents loaded!")
     logger.info("The server is running but no agent tools are available.")
     logger.info("Add .md agent configuration files to your agents directory:")
     logger.info(f"  Current agents directory: {config_dir}")
-    logger.info("  Example agent format: https://github.com/vredrick/task-agent/tree/main/examples/agents")
+    logger.info("Or create plugin agents with /custom-t-agent")
 else:
-    logger.info(f"Loaded {len(agent_manager.agents)} agents from {config_dir}")
+    md_count = sum(1 for a in agent_manager.agents.values() if not a.is_plugin_agent)
+    plugin_count = sum(1 for a in agent_manager.agents.values() if a.is_plugin_agent)
+    logger.info(f"Loaded {len(agent_manager.agents)} agents ({md_count} from .md, {plugin_count} from registry)")
 
 # Log available agents
 agents_info = agent_manager.get_agents_info()
