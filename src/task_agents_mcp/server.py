@@ -130,6 +130,9 @@ def create_agent_tool_function(agent_name: str, agent_config):
                         elif "🔄 Session reset" in message:
                             await ctx.report_progress(5, 100)
                             await ctx.info(message)
+                        elif message.startswith("partial:"):
+                            # Streaming text delta from --include-partial-messages
+                            await ctx.info(message[8:])
                         elif "✅ Task completed" in message or "completed" in message.lower():
                             await ctx.report_progress(100, 100)
                             await ctx.info(message)
@@ -142,13 +145,13 @@ def create_agent_tool_function(agent_name: str, agent_config):
                             await ctx.info(message)
                     except Exception as e:
                         logger.debug(f"Progress bridge error (non-critical): {e}")
-                
+
                 # Create the selected agent dict format expected by execute_task
                 selected_agent = {
                     'name': agent_config.name,  # Internal name for logging
                     'config': agent_config
                 }
-                
+
                 # Execute the task using the selected agent with session_reset and progress callback
                 result = await agent_manager.execute_task(
                     selected_agent, 
@@ -209,6 +212,9 @@ Returns:
                                 progress = min(10 + (tool_num * 15), 90)
                                 await ctx.report_progress(progress, 100)
                             await ctx.info(message)
+                        elif message.startswith("partial:"):
+                            # Streaming text delta from --include-partial-messages
+                            await ctx.info(message[8:])
                         elif "✅ Task completed" in message or "completed" in message.lower():
                             await ctx.report_progress(100, 100)
                             await ctx.info(message)
@@ -221,13 +227,13 @@ Returns:
                             await ctx.info(message)
                     except Exception as e:
                         logger.debug(f"Progress bridge error (non-critical): {e}")
-                
+
                 # Create the selected agent dict format expected by execute_task
                 selected_agent = {
                     'name': agent_config.name,  # Internal name for logging
                     'config': agent_config
                 }
-                
+
                 # Execute the task using the selected agent with progress callback
                 result = await agent_manager.execute_task(
                     selected_agent, 

@@ -255,6 +255,7 @@ class AgentManager:
             '-p', task_description,
             '--output-format', 'stream-json',
             '--verbose',  # Required for stream-json output
+            '--include-partial-messages',
             '--tools', ','.join(agent_config.tools),
             '--model', agent_config.model
         ]
@@ -427,7 +428,16 @@ class AgentManager:
                 if event_type == 'system' and event.get('subtype') == 'init':
                     session_id = event.get('session_id')
                     logger.info(f"Session ID: {session_id}")
-                
+
+                # Handle partial message streaming events
+                elif event_type == 'stream_event':
+                    stream_data = event.get('event', {})
+                    if stream_data.get('type') == 'content_block_delta':
+                        delta = stream_data.get('delta', {})
+                        if delta.get('type') == 'text_delta' and delta.get('text'):
+                            if progress_callback:
+                                await progress_callback(f"partial:{delta['text']}")
+
                 # Look for tool use events for progress
                 elif event_type == 'assistant' and 'message' in event:
                     message = event['message']
