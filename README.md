@@ -2,7 +2,7 @@
 
 A flexible MCP server that lets you create specialized AI agents as individual tools in Claude. Each agent appears as its own tool with custom prompts, models, and capabilities.
 
-**v4.0.0** - Simplified architecture with user-defined agents only
+**v4.1.0** - New CLI flags: `--tools`, `--name`, `--disallowed-tools`, `--mcp-config`
 
 ## 🎯 What is This?
 
@@ -73,9 +73,15 @@ cwd: .
 optional:
   # Enable session memory (remembers context between calls)
   resume-session: true 10  # Remember last 10 exchanges
-  
+
   # Additional directories the agent can access
   resource_dirs: ./docs, ./data
+
+  # Tools to deny (agent won't have access to these)
+  disallowed-tools: WebSearch, WebFetch
+
+  # Give the agent access to external MCP servers
+  mcp-config: ./mcp-servers.json
 ---
 
 System-prompt:
@@ -182,6 +188,37 @@ Give agents access to additional directories:
 optional:
   resource_dirs: ./templates, ./data, ./scripts
 ```
+
+### Disallowed Tools
+
+Deny specific tools from an agent:
+
+```yaml
+optional:
+  disallowed-tools: Bash, WebSearch, WebFetch
+```
+
+### MCP Server Access
+
+Give agents access to external MCP servers (e.g., databases, APIs):
+
+```yaml
+optional:
+  mcp-config: ./mcp-servers.json
+```
+
+The MCP config file follows the standard format:
+```json
+{
+  "my-db": {
+    "type": "stdio",
+    "command": "db-mcp-server",
+    "args": ["--connection", "postgres://..."]
+  }
+}
+```
+
+When `mcp-config` is set, `--strict-mcp-config` is also applied so the agent only uses its configured MCP servers.
 
 ### Working Directory
 

@@ -13,8 +13,7 @@ task_agents_mcp/
 ├── server.py            # Main MCP server implementation
 ├── agent_manager.py     # Agent discovery, loading, and execution
 ├── resource_manager.py  # MCP resource registration for agents
-├── session_store.py     # Session persistence for resume functionality
-└── agents/              # Built-in BMad methodology agents
+└── session_store.py     # Session persistence for resume functionality
 ```
 
 ## Key Components
@@ -54,10 +53,14 @@ task_agents_mcp/
 
 **Agent Execution Flow**:
 1. Parse agent configuration from .md file
-2. Build Claude CLI command with appropriate flags
+2. Build Claude CLI command with flags: `--tools`, `--name`, `--model`, `--system-prompt`, plus optional `--disallowed-tools`, `--mcp-config`, `--strict-mcp-config`, `-r`, `--add-dir`
 3. Handle session resumption if enabled
 4. Execute via subprocess and stream output
 5. Update session chain for next resume
+
+**AgentConfig Fields**:
+- Required: name, agent_name, description, tools, model, cwd, system_prompt
+- Optional: resume_session, resource_dirs, disallowed_tools, mcp_config
 
 ### resource_manager.py
 **Purpose**: MCP resource registration for agent discovery
@@ -88,20 +91,15 @@ task_agents_mcp/
 3. Chain continues until exchange limit
 4. Resets to fresh session after limit
 
-### agents/ subdirectory
-**Purpose**: Built-in BMad methodology agent configurations
-
-**Contents**: Pre-configured agents following BMad workflow
-- Strategic agents (opus): analyst, pm, ux_expert, architect
-- Tactical agents (sonnet): po, sm, dev, qa
-
 ## Integration Points
 
 ### With Claude CLI
-- Uses subprocess to execute `claude` command
-- Passes system prompts via stdin
+- Uses subprocess to execute `claude` command with `--output-format stream-json --verbose`
+- Uses `--tools` (comma-separated) instead of `--allowedTools`
+- Tags sessions with `--name` (auto-generated from agent name)
+- Supports `--disallowed-tools` and `--mcp-config` + `--strict-mcp-config`
 - Handles streaming output with proper encoding
-- Manages session IDs for resumption
+- Manages session IDs for resumption via `-r`
 
 ### With FastMCP
 - Each agent registered as separate tool
@@ -124,7 +122,7 @@ task_agents_mcp/
 
 ## Error Handling
 
-- Missing agents directory: Falls back to built-in agents
+- Missing agents directory: Logs warning, server runs with no tools
 - Claude CLI not found: Detailed error with installation instructions
 - Invalid agent config: Logged and skipped, server continues
 - Session corruption: Resets to fresh session
@@ -161,4 +159,4 @@ Version defined in two places (must be synchronized):
 - `__init__.py`: Package version
 - `pyproject.toml`: Distribution version
 
-Current version: 3.0.0 (Real-time progress streaming)
+Current version: 4.1.0 (New CLI flags: --tools, --name, --disallowed-tools, --mcp-config)

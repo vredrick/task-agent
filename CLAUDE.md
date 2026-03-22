@@ -85,6 +85,8 @@ cwd: .
 optional:
   resume-session: true 10
   resource_dirs: ./data
+  disallowed-tools: WebSearch, WebFetch
+  mcp-config: ./mcp-servers.json
 ---
 
 System-prompt:
@@ -142,20 +144,20 @@ python3.11 -m build
 python3.11 -m twine upload dist/*
 ```
 
-## 🎯 Key Changes in v4.0.0
+## 🎯 Key Changes in v4.1.0
 
-### What Changed
+### What Changed (v4.1.0)
+- **Replaced**: `--allowedTools` with `--tools` (comma-separated, explicit tool control)
+- **Added**: `--name` flag auto-generated from agent name for session identification
+- **Added**: `disallowed-tools` optional config field with `--disallowed-tools` CLI flag
+- **Added**: `mcp-config` optional config field with `--mcp-config` + `--strict-mcp-config` CLI flags
+
+### What Changed (v4.0.0)
 - **Removed**: Built-in agents directory (`src/task_agents_mcp/agents/`)
 - **Removed**: Dual-directory loading logic
 - **Added**: Example agent template in `task-agents/`
 - **Simplified**: Only loads from one agents directory
 - **Standardized**: Python 3.11+ requirement
-
-### Migration from v3.x
-Users upgrading from v3.x need to:
-1. Copy any BMad agents they want from examples
-2. Place them in their `task-agents/` directory
-3. No other changes needed
 
 ## 💡 Implementation Details
 
@@ -177,6 +179,22 @@ resource_uri = f"{sanitized_name}://"
 - Sessions stored in `/tmp/task_agents_sessions.json`
 - Each agent can maintain conversation context
 - `session_reset` parameter available for agents with `resume-session: true`
+- Sessions tagged with `--name` for identification in `/resume`
+
+### CLI Flags Used by Agent Subprocess
+```
+claude -p "task" --output-format stream-json --verbose
+       --tools Read,Write,Bash          # Comma-separated (replaces --allowedTools)
+       --model sonnet
+       --name agent_name                # Auto-generated from agent-name
+       --disallowed-tools WebSearch     # Optional, from config
+       --mcp-config ./mcp.json          # Optional, from config
+       --strict-mcp-config              # Added when mcp-config is set
+       --system-prompt "..."
+       --append-system-prompt "..."
+       -r <session_id>                  # When resuming
+       --add-dir <path>                 # When resource_dirs set
+```
 
 ## 🚨 Important Reminders
 
