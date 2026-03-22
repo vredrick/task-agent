@@ -494,10 +494,10 @@ class AgentManager:
                         cmd.extend(['--append-system-prompt-file', agent_config.prompt_file])
                     else:
                         cmd.extend(['--system-prompt-file', agent_config.prompt_file])
-
-                # Append working directory context
-                cmd.extend(['--append-system-prompt',
-                            f"WORKING DIRECTORY CONTEXT: You are currently operating from the directory: {working_dir}"])
+                        # Only add working dir context for override agents
+                        # (append agents retain default prompt which handles cwd)
+                        cmd.extend(['--append-system-prompt',
+                                    f"WORKING DIRECTORY CONTEXT: You are currently operating from the directory: {working_dir}"])
             else:
                 # .md-based agent: inline system prompt (existing behavior)
                 # Build dynamic resource directory instruction
