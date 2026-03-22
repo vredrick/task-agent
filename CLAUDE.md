@@ -2,7 +2,7 @@
 
 ## 🎯 Quick Context
 
-You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v4.0.0 with simplified architecture - no built-in agents, only user-defined ones.
+You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v4.1.0 with new CLI flags and streaming support.
 
 ### Key Architecture Points
 - Each agent = separate MCP tool (e.g., `analyst`, `dev`, `qa`)
@@ -17,7 +17,7 @@ You're working with a **multi-tool MCP server** where each user-defined AI agent
 ```
 task-agent/
 ├── src/task_agents_mcp/
-│   ├── __init__.py          # Version: 4.0.0
+│   ├── __init__.py          # Version: 4.1.0
 │   ├── server.py            # Multi-tool MCP server (main entry)
 │   ├── agent_manager.py     # Agent loader/executor
 │   ├── resource_manager.py  # MCP resource registration
@@ -35,7 +35,7 @@ task-agent/
 ### Package Info
 - **PyPI Name**: `task-agents-mcp`
 - **Command**: `task-agent` (no 's' at end!)
-- **Current Version**: 4.0.0
+- **Current Version**: 4.1.0
 - **Entry Point**: `task_agents_mcp.server:main`
 - **Python Requirement**: 3.11+
 
@@ -149,6 +149,7 @@ python3.11 -m twine upload dist/*
 ### What Changed (v4.1.0)
 - **Replaced**: `--allowedTools` with `--tools` (comma-separated, explicit tool control)
 - **Added**: `--name` flag auto-generated from agent name for session identification
+- **Added**: `--include-partial-messages` for real-time token streaming via progress notifications
 - **Added**: `disallowed-tools` optional config field with `--disallowed-tools` CLI flag
 - **Added**: `mcp-config` optional config field with `--mcp-config` + `--strict-mcp-config` CLI flags
 
@@ -184,6 +185,7 @@ resource_uri = f"{sanitized_name}://"
 ### CLI Flags Used by Agent Subprocess
 ```
 claude -p "task" --output-format stream-json --verbose
+       --include-partial-messages       # Real-time token streaming
        --tools Read,Write,Bash          # Comma-separated (replaces --allowedTools)
        --model sonnet
        --name agent_name                # Auto-generated from agent-name

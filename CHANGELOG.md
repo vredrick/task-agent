@@ -1,5 +1,40 @@
 # Changelog
 
+## [4.1.0] - 2026-03-22
+
+### Changed
+- Replaced `--allowedTools` with `--tools` (comma-separated, explicit tool control)
+
+### Added
+- `--name` flag auto-generated from agent name for session identification in `/resume`
+- `--include-partial-messages` for real-time token-by-token streaming via progress notifications
+- `disallowed-tools` optional agent config field with `--disallowed-tools` CLI flag
+- `mcp-config` optional agent config field with `--mcp-config` + `--strict-mcp-config` CLI flags
+- `stream_event` handler in process_event for partial message deltas
+- Partial text forwarding through progress_callback to MCP client via `ctx.info()`
+
+## [4.0.0] - 2026-03-21
+
+### Changed
+- Simplified architecture: removed all built-in agents, user-defined only
+- Single agents directory (no more dual-directory loading)
+- Standardized on Python 3.11+
+
+### Removed
+- Built-in BMad methodology agents directory (`src/task_agents_mcp/agents/`)
+- Dual-directory agent loading logic
+
+### Added
+- Example agent template in `task-agents/example-agent.md`
+
+## [3.0.0] - 2025
+
+### Added
+- Real-time progress streaming via MCP context
+- Resource manager for MCP resource registration per agent
+- Dynamic resource directory handling with `--add-dir`
+- Enhanced resource directory path resolution
+
 ## [2.5.0] - 2025-08-04
 
 ### Added

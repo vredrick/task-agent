@@ -94,7 +94,7 @@ task_agents_mcp/
 ## Integration Points
 
 ### With Claude CLI
-- Uses subprocess to execute `claude` command with `--output-format stream-json --verbose`
+- Uses subprocess to execute `claude` command with `--output-format stream-json --verbose --include-partial-messages`
 - Uses `--tools` (comma-separated) instead of `--allowedTools`
 - Tags sessions with `--name` (auto-generated from agent name)
 - Supports `--disallowed-tools` and `--mcp-config` + `--strict-mcp-config`
