@@ -1,0 +1,1 @@
+/home/vredrick/.claude/plugins/rapper/agent.md

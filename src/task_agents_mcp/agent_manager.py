@@ -69,7 +69,21 @@ class AgentManager:
     def _parse_agent_config(self, config_path: Path) -> Optional[AgentConfig]:
         """Parse a single agent configuration file."""
         content = config_path.read_text()
-        
+
+        # Resolve symlinks to detect plugin directories
+        real_path = os.path.realpath(str(config_path))
+        plugin_dir = None
+        is_plugin = False
+        prompt_file = None
+        prompt_type = "override"
+
+        parent_dir = Path(real_path).parent
+        if (parent_dir / ".claude-plugin").is_dir():
+            plugin_dir = str(parent_dir)
+            is_plugin = True
+            prompt_file = real_path
+            logger.info(f"Auto-detected plugin agent: {config_path.name} -> {plugin_dir}")
+
         # Extract YAML frontmatter
         frontmatter_match = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)$', content, re.DOTALL)
         if not frontmatter_match:
@@ -152,7 +166,19 @@ class AgentManager:
                 mcp_config_val = optional.get('mcp-config') or optional.get('mcp_config')
                 if mcp_config_val and isinstance(mcp_config_val, str):
                     mcp_config = mcp_config_val.strip()
-            
+
+                # Parse prompt-type (for plugin agents)
+                prompt_type_val = optional.get('prompt-type', optional.get('prompt_type'))
+                if prompt_type_val:
+                    prompt_type = prompt_type_val
+
+            # Auto-detect mcp.json for plugin agents
+            if is_plugin and not mcp_config:
+                mcp_json = os.path.join(plugin_dir, "mcp.json")
+                if os.path.exists(mcp_json):
+                    mcp_config = mcp_json
+                    logger.info(f"Auto-detected mcp.json at {mcp_json}")
+
             return AgentConfig(
                 name=config_path.stem,
                 agent_name=frontmatter['agent-name'],
@@ -164,7 +190,11 @@ class AgentManager:
                 resume_session=resume_session,
                 resource_dirs=resource_dirs,
                 disallowed_tools=disallowed_tools,
-                mcp_config=mcp_config
+                mcp_config=mcp_config,
+                plugin_dir=plugin_dir,
+                prompt_type=prompt_type,
+                is_plugin_agent=is_plugin,
+                prompt_file=prompt_file
             )
             
         except yaml.YAMLError as e:
