@@ -17,8 +17,10 @@ optional:
   # Tools to deny (comma-separated) - used with --disallowed-tools flag
   # disallowed-tools: WebSearch, WebFetch
 
-  # Path to MCP server configuration JSON file (absolute or relative to cwd)
-  # mcp-config: ./mcp-servers.json
+  # Human-readable capabilities for LLM tool descriptions (list or multi-line string)
+  # capabilities:
+  #   - Can send and read Slack messages
+  #   - Can create and review GitHub PRs
 ---
 
 System-prompt:
@@ -43,7 +45,13 @@ This file shows how to create custom agents for the task-agents MCP server.
   - `10` = 10 exchanges
 - **resource_dirs**: Additional directories the agent can access
 - **disallowed-tools**: Comma-separated list of tools to deny
-- **mcp-config**: Path to MCP server configuration JSON file
+- **capabilities**: List of human-readable capability descriptions (shown in tool description to calling LLM)
+
+### MCP Servers & Skills (Project-Scoped):
+MCP servers and skills are configured per-agent via Claude Code's project-scoped settings.
+From the agent's working directory (cwd), run:
+  `claude mcp add <server-name> <command> -s project`
+This writes to `{cwd}/.claude/settings.json` and is automatically available to the agent.
 
 ### Available Tools:
 - Read, Write, Edit, MultiEdit - File operations

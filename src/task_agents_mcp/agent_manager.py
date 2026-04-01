@@ -33,12 +33,38 @@ class AgentConfig:
     resume_session: Union[bool, int] = False  # False, True (5 default), or specific number
     resource_dirs: List[str] = None  # Optional additional directories to add via --add-dir
     disallowed_tools: List[str] = None  # Optional tools to deny via --disallowed-tools
-    mcp_config: Optional[str] = None  # Optional path to MCP config JSON via --mcp-config
+    capabilities: Optional[List[str]] = None  # Human-readable capability descriptions
+    mcp_server_names: Optional[List[str]] = None  # Auto-discovered from project-scoped settings in cwd
     plugin_dir: Optional[str] = None  # Path to plugin directory (for registry-based agents)
     prompt_type: str = "override"  # "override" or "append" (how PROMPT.md is applied)
     is_plugin_agent: bool = False  # True if loaded from plugin registry
     prompt_file: Optional[str] = None  # Path to PROMPT.md file
     
+
+def _read_project_mcp_servers(resolved_cwd: str) -> Optional[List[str]]:
+    """Read MCP server names from Claude Code project-scoped settings in cwd.
+
+    Checks both .claude/settings.json and .claude/settings.local.json,
+    merging server names from both.
+    """
+    server_names = set()
+
+    for filename in ['settings.json', 'settings.local.json']:
+        settings_path = os.path.join(resolved_cwd, '.claude', filename)
+        if not os.path.exists(settings_path):
+            continue
+        try:
+            with open(settings_path) as f:
+                settings = json.load(f)
+            servers = settings.get('mcpServers', {})
+            if servers:
+                server_names.update(servers.keys())
+                logger.info(f"Discovered MCP servers from {settings_path}: {list(servers.keys())}")
+        except (json.JSONDecodeError, IOError, OSError) as e:
+            logger.warning(f"Failed to read project settings for MCP discovery: {e}")
+
+    return sorted(server_names) if server_names else None
+
 
 class AgentManager:
     """Manages agent configurations and task delegation."""
@@ -51,6 +77,15 @@ class AgentManager:
         session_store_path = Path("/tmp/task_agents_sessions.json")
         self.session_store = SessionChainStore(session_store_path)
         
+    def _resolve_agent_cwd(self, cwd: str, is_plugin: bool = False) -> str:
+        """Resolve agent cwd to absolute path (for settings discovery at load time)."""
+        if cwd == '.':
+            if is_plugin:
+                return os.getcwd()
+            else:
+                return str(Path(self.configs_dir).resolve().parent)
+        return os.path.abspath(os.path.expandvars(cwd))
+
     def load_agents(self) -> None:
         """Load all agent configurations from the configs directory."""
         if not self.configs_dir.exists():
@@ -121,7 +156,7 @@ class AgentManager:
             resume_session = False
             resource_dirs = None
             disallowed_tools = None
-            mcp_config = None
+            capabilities = None
             
             if 'optional' in frontmatter and isinstance(frontmatter['optional'], dict):
                 optional = frontmatter['optional']
@@ -162,22 +197,28 @@ class AgentManager:
                     elif isinstance(disallowed_tools_val, list):
                         disallowed_tools = disallowed_tools_val
 
-                # Parse mcp-config
-                mcp_config_val = optional.get('mcp-config') or optional.get('mcp_config')
-                if mcp_config_val and isinstance(mcp_config_val, str):
-                    mcp_config = mcp_config_val.strip()
+                # Parse capabilities
+                capabilities_val = optional.get('capabilities')
+                if capabilities_val:
+                    if isinstance(capabilities_val, str):
+                        capabilities = [line.strip().lstrip('- ').strip()
+                                       for line in capabilities_val.strip().split('\n')
+                                       if line.strip() and line.strip() != '-']
+                    elif isinstance(capabilities_val, list):
+                        capabilities = [str(c).strip() for c in capabilities_val if str(c).strip()]
+                    else:
+                        capabilities = None
+                else:
+                    capabilities = None
 
                 # Parse prompt-type (for plugin agents)
                 prompt_type_val = optional.get('prompt-type', optional.get('prompt_type'))
                 if prompt_type_val:
                     prompt_type = prompt_type_val
 
-            # Auto-detect mcp.json for plugin agents
-            if is_plugin and not mcp_config:
-                mcp_json = os.path.join(plugin_dir, "mcp.json")
-                if os.path.exists(mcp_json):
-                    mcp_config = mcp_json
-                    logger.info(f"Auto-detected mcp.json at {mcp_json}")
+            # Discover MCP server names from project-scoped settings in cwd
+            resolved_cwd = self._resolve_agent_cwd(cwd, is_plugin=is_plugin)
+            mcp_server_names = _read_project_mcp_servers(resolved_cwd)
 
             return AgentConfig(
                 name=config_path.stem,
@@ -190,7 +231,8 @@ class AgentManager:
                 resume_session=resume_session,
                 resource_dirs=resource_dirs,
                 disallowed_tools=disallowed_tools,
-                mcp_config=mcp_config,
+                capabilities=capabilities,
+                mcp_server_names=mcp_server_names,
                 plugin_dir=plugin_dir,
                 prompt_type=prompt_type,
                 is_plugin_agent=is_plugin,
@@ -316,9 +358,28 @@ class AgentManager:
         # Resolve working directory
         cwd = entry.get("workingDir") or "."
 
-        # MCP config path
-        mcp_config_path = os.path.join(plugin_dir, "mcp.json")
-        mcp_config = mcp_config_path if os.path.exists(mcp_config_path) else None
+        # Discover MCP server names from project-scoped settings in cwd
+        resolved_cwd = self._resolve_agent_cwd(cwd, is_plugin=True)
+        mcp_server_names = _read_project_mcp_servers(resolved_cwd)
+        # Fallback: use registry mcpServers list if project settings not found
+        if not mcp_server_names:
+            registry_servers = entry.get("mcpServers", [])
+            if registry_servers:
+                mcp_server_names = registry_servers
+
+        # Parse capabilities from plugin.json or registry
+        capabilities = plugin_meta.get("capabilities")
+        if capabilities and isinstance(capabilities, str):
+            capabilities = [line.strip().lstrip('- ').strip()
+                           for line in capabilities.strip().split('\n')
+                           if line.strip() and line.strip() != '-']
+        elif not isinstance(capabilities, list):
+            capabilities = None
+        # Fallback: check registry entry
+        if not capabilities:
+            reg_caps = entry.get("capabilities")
+            if isinstance(reg_caps, list) and reg_caps:
+                capabilities = reg_caps
 
         # Display name from registry or derive from name
         display_name = entry.get("displayName", name.replace("-", " ").title())
@@ -333,7 +394,8 @@ class AgentManager:
             system_prompt=system_prompt,
             resume_session=resume_session,
             disallowed_tools=disallowed_tools,
-            mcp_config=mcp_config,
+            capabilities=capabilities,
+            mcp_server_names=mcp_server_names,
             plugin_dir=plugin_dir,
             prompt_type=entry.get("promptType", "override"),
             is_plugin_agent=True,
@@ -473,16 +535,8 @@ class AgentManager:
                         logger.warning(f"Resource directory not found or not a directory: {resolved_dir}")
                         missing_resource_dirs.append((resource_dir, resolved_dir))
             
-            # Add MCP config if specified
-            if agent_config.mcp_config:
-                mcp_config_path = agent_config.mcp_config
-                if not os.path.isabs(mcp_config_path):
-                    mcp_config_path = os.path.abspath(os.path.join(working_dir, mcp_config_path))
-                if os.path.exists(mcp_config_path):
-                    cmd.extend(['--mcp-config', mcp_config_path, '--strict-mcp-config'])
-                    logger.info(f"Added MCP config: {mcp_config_path}")
-                else:
-                    logger.warning(f"MCP config file not found: {mcp_config_path}")
+            # MCP servers and skills are inherited from project-scoped settings
+            # in the agent's working directory ({cwd}/.claude/settings.json)
 
             # Branch: plugin-based agents vs .md-based agents
             if agent_config.is_plugin_agent and agent_config.plugin_dir:

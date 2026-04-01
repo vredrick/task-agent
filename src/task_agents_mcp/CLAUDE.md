@@ -53,14 +53,14 @@ task_agents_mcp/
 
 **Agent Execution Flow**:
 1. Parse agent configuration from .md file
-2. Build Claude CLI command with flags: `--tools`, `--name`, `--model`, `--system-prompt`, plus optional `--disallowed-tools`, `--mcp-config`, `--strict-mcp-config`, `-r`, `--add-dir`
+2. Build Claude CLI command with flags: `--tools`, `--name`, `--model`, `--system-prompt`, plus optional `--disallowed-tools`, `-r`, `--add-dir`
 3. Handle session resumption if enabled
 4. Execute via subprocess and stream output
 5. Update session chain for next resume
 
 **AgentConfig Fields**:
 - Required: name, agent_name, description, tools, model, cwd, system_prompt
-- Optional: resume_session, resource_dirs, disallowed_tools, mcp_config
+- Optional: resume_session, resource_dirs, disallowed_tools, capabilities, mcp_server_names
 
 ### resource_manager.py
 **Purpose**: MCP resource registration for agent discovery
@@ -97,7 +97,8 @@ task_agents_mcp/
 - Uses subprocess to execute `claude` command with `--output-format stream-json --verbose --include-partial-messages`
 - Uses `--tools` (comma-separated) instead of `--allowedTools`
 - Tags sessions with `--name` (auto-generated from agent name)
-- Supports `--disallowed-tools` and `--mcp-config` + `--strict-mcp-config`
+- Supports `--disallowed-tools` for tool deny-listing
+- MCP servers inherited from project-scoped settings in agent's cwd
 - Handles streaming output with proper encoding
 - Manages session IDs for resumption via `-r`
 
@@ -159,4 +160,4 @@ Version defined in two places (must be synchronized):
 - `__init__.py`: Package version
 - `pyproject.toml`: Distribution version
 
-Current version: 4.1.0 (New CLI flags: --tools, --name, --disallowed-tools, --mcp-config)
+Current version: 4.3.0 (Project-scoped MCP/skill isolation via agent cwd)

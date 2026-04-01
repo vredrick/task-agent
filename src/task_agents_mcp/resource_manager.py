@@ -92,7 +92,11 @@ class AgentResourceManager:
             # Add resource directories if present
             if agent_config.resource_dirs:
                 resource_data["technical_details"]["resource_directories"] = agent_config.resource_dirs
-            
+
+            # Add MCP server names if present
+            if agent_config.mcp_server_names:
+                resource_data["technical_details"]["mcp_servers"] = agent_config.mcp_server_names
+
             return resource_data
         
         # Set the function name to be unique and descriptive
@@ -105,6 +109,11 @@ class AgentResourceManager:
     
     def _get_agent_capabilities(self, agent_name: str, agent_config) -> List[str]:
         """Get a list of specific capabilities for an agent."""
+        # Prefer capabilities defined in agent config
+        if agent_config.capabilities:
+            return agent_config.capabilities
+
+        # Fall back to hardcoded map for known BMad agents
         capabilities_map = {
             "analyst": [
                 "Market research and competitive analysis",

@@ -2,7 +2,7 @@
 
 ## 🎯 Quick Context
 
-You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v4.1.0 with new CLI flags and streaming support.
+You're working with a **multi-tool MCP server** where each user-defined AI agent is exposed as its own tool. This is v4.3.0 with project-scoped MCP/skill isolation, enriched tool descriptions, and capabilities support.
 
 ### Key Architecture Points
 - Each agent = separate MCP tool (e.g., `analyst`, `dev`, `qa`)
@@ -17,7 +17,7 @@ You're working with a **multi-tool MCP server** where each user-defined AI agent
 ```
 task-agent/
 ├── src/task_agents_mcp/
-│   ├── __init__.py          # Version: 4.1.0
+│   ├── __init__.py          # Version: 4.3.0
 │   ├── server.py            # Multi-tool MCP server (main entry)
 │   ├── agent_manager.py     # Agent loader/executor
 │   ├── resource_manager.py  # MCP resource registration
@@ -35,7 +35,7 @@ task-agent/
 ### Package Info
 - **PyPI Name**: `task-agents-mcp`
 - **Command**: `task-agent` (no 's' at end!)
-- **Current Version**: 4.1.0
+- **Current Version**: 4.3.0
 - **Entry Point**: `task_agents_mcp.server:main`
 - **Python Requirement**: 3.11+
 
@@ -86,12 +86,22 @@ optional:
   resume-session: true 10
   resource_dirs: ./data
   disallowed-tools: WebSearch, WebFetch
-  mcp-config: ./mcp-servers.json
+  capabilities:
+    - Can send and read Slack messages
+    - Can create and review GitHub PRs
 ---
 
 System-prompt:
 You are...
 ```
+
+#### MCP Servers & Skills per Agent (Project-Scoped)
+MCP servers and skills are isolated per agent via the agent's `cwd`. Configure from the agent's working directory:
+```bash
+cd /path/to/agent/cwd
+claude mcp add slack-server npx slack-mcp -s project
+```
+This writes to `{cwd}/.claude/settings.json` — the agent subprocess picks it up automatically.
 
 ### Testing
 ```bash
@@ -144,14 +154,27 @@ python3.11 -m build
 python3.11 -m twine upload dist/*
 ```
 
-## 🎯 Key Changes in v4.1.0
+## 🎯 Key Changes
+
+### What Changed (v4.3.0)
+- **Removed**: `mcp-config` optional config field and `--mcp-config`/`--strict-mcp-config` CLI flags
+- **Changed**: MCP servers and skills now isolated per agent via project-scoped settings in the agent's `cwd`
+- **Changed**: MCP server discovery reads from `{cwd}/.claude/settings.json` + `settings.local.json`
+- **Added**: `_resolve_agent_cwd()` helper for early cwd resolution at load time
+- **Updated**: Users configure agent MCP/skills with `claude mcp add ... -s project` from the agent's cwd
+
+### What Changed (v4.2.0)
+- **Added**: `capabilities` optional config field — human-readable capability descriptions shown in tool description
+- **Added**: MCP server auto-discovery — reads `mcp-config` JSON at load time, extracts server names
+- **Added**: `mcp_server_names` field on `AgentConfig` — auto-populated from project-scoped settings
+- **Added**: `build_tool_description()` helper in server.py — richer tool descriptions with capabilities + MCP servers
+- **Updated**: Resource manager prefers config-defined capabilities over hardcoded BMad map
 
 ### What Changed (v4.1.0)
 - **Replaced**: `--allowedTools` with `--tools` (comma-separated, explicit tool control)
 - **Added**: `--name` flag auto-generated from agent name for session identification
 - **Added**: `--include-partial-messages` for real-time token streaming via progress notifications
 - **Added**: `disallowed-tools` optional config field with `--disallowed-tools` CLI flag
-- **Added**: `mcp-config` optional config field with `--mcp-config` + `--strict-mcp-config` CLI flags
 
 ### What Changed (v4.0.0)
 - **Removed**: Built-in agents directory (`src/task_agents_mcp/agents/`)
@@ -190,12 +213,11 @@ claude -p "task" --output-format stream-json --verbose
        --model sonnet
        --name agent_name                # Auto-generated from agent-name
        --disallowed-tools WebSearch     # Optional, from config
-       --mcp-config ./mcp.json          # Optional, from config
-       --strict-mcp-config              # Added when mcp-config is set
        --system-prompt "..."
        --append-system-prompt "..."
        -r <session_id>                  # When resuming
        --add-dir <path>                 # When resource_dirs set
+       # MCP servers: inherited from {cwd}/.claude/settings.json (project-scoped)
 ```
 
 ## 🚨 Important Reminders

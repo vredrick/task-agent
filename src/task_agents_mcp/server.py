@@ -98,6 +98,30 @@ def sanitize_tool_name(agent_name: str) -> str:
     return agent_name.lower().replace(' ', '_').replace('-', '_')
 
 
+def build_tool_description(agent_config) -> str:
+    """Build a rich tool description including capabilities and MCP servers."""
+    parts = [agent_config.description]
+
+    # Add capabilities section if present
+    if agent_config.capabilities:
+        parts.append("")
+        parts.append("Capabilities:")
+        for cap in agent_config.capabilities:
+            parts.append(f"  - {cap}")
+
+    parts.append("")
+    parts.append(f"Built-in tools: {', '.join(agent_config.tools)}")
+
+    # Add MCP servers section if present
+    if agent_config.mcp_server_names:
+        parts.append(f"MCP servers: {', '.join(agent_config.mcp_server_names)}")
+
+    parts.append(f"Model: {agent_config.model}")
+    parts.append(f"Working directory: {agent_config.cwd}")
+
+    return '\n'.join(parts)
+
+
 def create_agent_tool_function(agent_name: str, agent_config):
     """Create a tool function for a specific agent."""
     
@@ -175,11 +199,8 @@ def create_agent_tool_function(agent_name: str, agent_config):
         
         # Set function metadata with session_reset parameter
         agent_tool_impl.__name__ = sanitize_tool_name(agent_name)
-        agent_tool_impl.__doc__ = f"""{agent_config.description}
-
-Available tools: {', '.join(agent_config.tools)}
-Model: {agent_config.model}
-Working directory: {agent_config.cwd}
+        base_desc = build_tool_description(agent_config)
+        agent_tool_impl.__doc__ = f"""{base_desc}
 Session support: Enabled (max {agent_config.resume_session if isinstance(agent_config.resume_session, int) else 5} exchanges)
 
 Parameters:
@@ -256,11 +277,8 @@ Returns:
         
         # Set function metadata without session_reset parameter
         agent_tool_impl.__name__ = sanitize_tool_name(agent_name)
-        agent_tool_impl.__doc__ = f"""{agent_config.description}
-
-Available tools: {', '.join(agent_config.tools)}
-Model: {agent_config.model}
-Working directory: {agent_config.cwd}
+        base_desc = build_tool_description(agent_config)
+        agent_tool_impl.__doc__ = f"""{base_desc}
 
 Parameters:
     prompt: The specific task, question, or request for the agent to perform
